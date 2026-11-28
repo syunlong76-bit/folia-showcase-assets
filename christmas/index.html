@@ -1,0 +1,2282 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="data:," />
+    <title>圣诞光粒子样板</title>
+    <style>
+      html, body {
+        margin: 0; padding: 0; height: 100%; overflow: hidden;
+        background: #020309;
+      }
+      #stage {
+        position: fixed; inset: 0;
+        background: radial-gradient(120% 90% at 50% 108%, #17101a 0%, #0a0716 46%, #02030a 80%);
+        touch-action: none;
+      }
+      #stage canvas { display: block; }
+      #vignette {
+        position: fixed; inset: 0; pointer-events: none;
+        background: radial-gradient(88% 72% at 50% 46%, rgba(0,0,0,0) 52%, rgba(1,2,8,0.66) 100%);
+      }
+      #bar {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
+        display: flex; justify-content: space-between; align-items: flex-end; gap: 12px;
+        padding: 18px 12px 8px; pointer-events: none;
+        background: linear-gradient(to top, rgba(2,6,14,.72), rgba(2,6,14,0));
+        color: rgba(214, 228, 246, .62);
+        font: 10.5px/1.55 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      #bar .stats { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+      #bar .credits { text-align: right; }
+      @media (max-width: 560px) {
+        #bar { flex-direction: column; align-items: flex-start; gap: 2px; }
+        #bar .credits { text-align: left; }
+        #bar .stats { white-space: normal; }
+      }
+      .sr-only {
+        position: absolute; width: 1px; height: 1px; overflow: hidden;
+        clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="sr-only">圣诞雪夜场景：一棵由数千颗多色光点构成的发光圣诞树立在小镇的中心广场上，光点沿枝杈聚拢、疏密不均，亮芯锐利、光晕紧凑，金、红、绿、粉、蓝的彩灯光点排成树形，树顶一颗亮星，少量星尘环绕在树身周围。整个画面沉在深暗的夜色里，只有光更灿烂：树基围着一圈白色尖栅栏，栏内堆着系着丝带的礼物盒。广场中央是清扫出的石板地，石环和小路向外延伸，雪堆在广场边缘。周围一圈真实模型的小镇建筑——原木圣诞小屋、红顶旅店、白墙美式屋，远处立着一座钟楼；每家都有亮着暖光的窗户，屋顶积着雪层、檐口挂着雪线。广场周围立着覆雪的松树，五盏路灯缠着垂落的彩灯串，灯与大树之间也垂着一串串带弧度的彩灯。广场后排着四个市集小摊，条纹棚顶下分别卖炭火栗子、热饮（杯口冒着蒸汽）、彩球挂饰和姜饼。长椅围着大树，雪人守在椅边，街边平行停着两辆轿车，前灯在雪地上投下光晕，路边立着给圣诞老人寄信的红色邮箱。大小不一的雪花带着六角冰晶的形态，在缓变的风场里成阵飘落，阵风时成片斜扫；手指划过会搅动雪幕、点按会扬起一小团雪沫。雪真实地落在树冠、屋顶、路灯顶、信箱顶、长椅面、车顶、礼物盒和地面上，一点点积起来又慢慢化掉。场景里没有任何人物。歌词由构成树身的同一批粒子沿缎带般的轨迹飞出、逐字唱亮汇聚成形，字外环绕着细弱的星尘缎带，唱完顺风卷散再飞回树上原位；每一句都落在广场上方的开阔空域，整句完整可见，不被任何屋顶或树木遮挡。可拖动环绕观看，双指捏合时粒子如银河般散开。第一次点按或拖动页面后，背景音乐会以低音量淡入并循环播放；页面切到后台时音乐暂停，回到前台后恢复。</p>
+    <div id="stage" aria-hidden="true"></div>
+    <div id="vignette" aria-hidden="true"></div>
+    <div id="bar">
+      <div class="stats" id="stats">实时 3D 渲染 · 加载中</div>
+      <div class="credits">模型：Christmas Cabin © Jakers_H · Snow Pine © Chris Lee · Lamp Post © Poly by Google（CC-BY 3.0）；Fantasy Inn / Market Stand / Fence / Present / Bench / Car / Bell Tower（Quaternius）/ Mailbox（CreativeTrio）为 CC0（via poly.pizza）；背景音乐：Last Christmas — cover by J.Fla</div>
+    </div>
+
+    <script src="assets/three.min.js"></script>
+    <script>
+    (function () {
+      'use strict';
+      // Build after DOMContentLoaded: the scene construction is heavy
+      // (merged bough trees, canvas textures) and must not hold back
+      // the document's load event on slow devices.
+      function init() {
+
+      var stage = document.getElementById('stage');
+      var Q = new URLSearchParams(location.search);
+      var STILL = Q.get('still') === '1';
+      var DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+      var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(DPR);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x05070f, 1);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.85;
+      stage.appendChild(renderer.domElement);
+
+      var scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x07060f, 0.017);
+
+      // gradient night-sky dome (fog-free), the approved still's backdrop
+      var skyDome = new THREE.Mesh(
+        new THREE.SphereGeometry(120, 24, 16),
+        new THREE.ShaderMaterial({
+          side: THREE.BackSide, depthWrite: false, fog: false,
+          uniforms: {},
+          vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+          fragmentShader: [
+            'varying vec3 vP;',
+            'void main(){',
+            '  float h = normalize(vP).y;',
+            '  vec3 top = vec3(0.012, 0.027, 0.063);',
+            '  vec3 mid = vec3(0.043, 0.082, 0.141);',
+            '  vec3 hor = vec3(0.05, 0.07, 0.105);',
+            '  vec3 c = mix(hor, mid, smoothstep(-0.02, 0.22, h));',
+            '  c = mix(c, top, smoothstep(0.2, 0.75, h));',
+            '  gl_FragColor = vec4(c, 1.0);',
+            '}'
+          ].join('\n')
+        })
+      );
+      scene.add(skyDome);
+
+      var camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 200);
+
+      /* ---- post: ACES + threshold bloom, the approved still's chain.
+         Only what is truly bright (window glass, lamp cores, the star,
+         particle cores) crosses the threshold and blooms. ---- */
+      var composer = new THREE.EffectComposer(renderer);
+      composer.addPass(new THREE.RenderPass(scene, camera));
+      var bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.4, 0.9);
+      composer.addPass(bloomPass);
+      composer.addPass(new THREE.OutputPass());
+      renderer.info.autoReset = false;
+
+      /* ---- dark night rig: the solids are deliberately underlit so
+         the light itself carries the picture. One cool moon key (the
+         only shadow caster, PCFSoft), a faint warm rim, and one warm
+         point at the tree's heart. Windows, lamps, bulbs and every
+         particle are emissive / additive and stay brilliant against
+         the dark. ---- */
+      scene.add(new THREE.HemisphereLight(0x2c3a5c, 0x1c120a, 0.34));
+      var moonLight = new THREE.DirectionalLight(0xc9d9f2, 0.24);
+      moonLight.position.set(-16, 22, -8);
+      moonLight.castShadow = true;
+      moonLight.shadow.mapSize.set(1024, 1024);
+      moonLight.shadow.camera.left = -27;
+      moonLight.shadow.camera.right = 27;
+      moonLight.shadow.camera.top = 27;
+      moonLight.shadow.camera.bottom = -27;
+      moonLight.shadow.camera.near = 1;
+      moonLight.shadow.camera.far = 70;
+      moonLight.shadow.bias = -0.0006;
+      scene.add(moonLight);
+      var rimLight = new THREE.DirectionalLight(0xffab5e, 0.16);
+      rimLight.position.set(14, 9, 16);
+      scene.add(rimLight);
+      var treeLight = new THREE.PointLight(0xffa64d, 40, 44, 2);
+      treeLight.position.set(0, 4.6, 0);
+      scene.add(treeLight);
+
+      /* ---------------- camera rig: orbit + inertia + spring + lyric follow ---------------- */
+      // Default framing = the approved still's camera, converted into
+      // rig terms. In the still the tree stood at (-1.8, 0, -0.5) and
+      // the camera sat low in the +x/+z quadrant, near ground level,
+      // looking across at it (desktop: pos (9.2, 3.8, 14.2), look
+      // (-0.6, 2.8, -1.2), fov 40; portrait: fov 52, pulled back).
+      // Here the tree is at the origin and ~1.25x taller, so the look
+      // target is the still's tree-relative look point height-scaled
+      // to (1.2, 3.6, -0.7), and each aspect band keeps the still's
+      // offset direction and fov, pushed out just far enough that
+      // the whole tree — star to fence — stays in frame.
+      var camTarget = new THREE.Vector3(1.2, 3.6, -0.7);
+      function defaultView() {
+        var a = window.innerWidth / window.innerHeight;
+        if (a < 0.8) return { theta: 0.411, phi: 1.556, radius: 24.5, fov: 52 };
+        if (a < 1.3) return { theta: 0.488, phi: 1.543, radius: 21.5, fov: 44 };
+        return { theta: 0.567, phi: 1.516, radius: 22.0, fov: 40 };
+      }
+      function defaultRadius() { return defaultView().radius; }
+      var dv0 = defaultView();
+      var rig = {
+        theta: dv0.theta, phi: dv0.phi, radius: dv0.radius,
+        tTheta: dv0.theta, tPhi: dv0.phi, tRadius: dv0.radius,
+        velTheta: 0, velPhi: 0, lastTouch: -10
+      };
+      camera.fov = dv0.fov;
+      camera.updateProjectionMatrix();
+
+      // Lyric follow state: while a line forms, the camera glides toward
+      // that line's anchor (drone-like, spring-eased); when the particles
+      // fly home, the goal drops to 0 and the camera settles back to the
+      // idle full view. A user drag cancels the follow for that line.
+      var follow = {
+        cur: 0, goal: 0, allowed: true,
+        dTheta: 0, phi: 1.1, radius: 14,
+        focus: new THREE.Vector3(0, 4.3, 0)
+      };
+
+      function applyCamera(dt) {
+        // inertia
+        if (!dragging && !pinching) {
+          rig.tTheta += rig.velTheta * dt * 60 * 0.016;
+          rig.tPhi += rig.velPhi * dt * 60 * 0.016;
+          rig.velTheta *= Math.pow(0.06, dt);
+          rig.velPhi *= Math.pow(0.06, dt);
+          rig.tPhi = Math.max(0.92, Math.min(1.58, rig.tPhi));
+        }
+        // gentle auto drift when idle
+        if (!reduced && performance.now() / 1000 - rig.lastTouch > 4 && !dragging && !pinching) {
+          rig.tTheta += dt * 0.03;
+        }
+        var k = 1 - Math.pow(0.0001, dt); // spring follow
+        rig.theta += (rig.tTheta - rig.theta) * k;
+        rig.phi += (rig.tPhi - rig.phi) * k;
+        rig.radius += (rig.tRadius - rig.radius) * k;
+
+        // lyric follow: slower ease-out on the way back than on the way in
+        var fGoal = (follow.allowed && !dragging && !pinching) ? follow.goal : 0;
+        var fBase = fGoal > follow.cur ? 0.10 : 0.30;
+        follow.cur += (fGoal - follow.cur) * (1 - Math.pow(fBase, dt));
+        if (follow.cur < 0.001 && fGoal === 0) follow.cur = 0;
+        var fc = follow.cur;
+        if (STILL && Q.get('anchor') !== null) { follow.cur = follow.goal; fc = follow.cur; }   // per-anchor check frame only; plain ?still=1 keeps the default framing
+
+        var th = rig.theta + follow.dTheta * fc;
+        var ph = rig.phi + (follow.phi - rig.phi) * fc;
+        ph = Math.max(0.85, Math.min(1.58, ph));
+        var rad = rig.radius + (follow.radius - rig.radius) * fc;
+        var tx = camTarget.x + (follow.focus.x - camTarget.x) * fc;
+        var ty = camTarget.y + (follow.focus.y - camTarget.y) * fc;
+        var tz = camTarget.z + (follow.focus.z - camTarget.z) * fc;
+
+        var sp = Math.sin(ph), y = Math.cos(ph);
+        camera.position.set(
+          tx + rad * sp * Math.sin(th),
+          ty + rad * y,
+          tz + rad * sp * Math.cos(th)
+        );
+        camera.lookAt(tx, ty, tz);
+      }
+
+      /* ================================================================
+         SHARED PARTICLE POOL
+         One pool: the particles that form the Christmas tree itself.
+         Lyric glyphs are NOT a separate system: each pool particle
+         carries a lyric target (aLyr). When a line forms, borrowed
+         particles visibly leave the tree, gather into glyphs, hold,
+         then fly back to the exact same tree slot.
+         uFly / uReturn / uLyrPos / uCharLit are shared uniform objects,
+         so one JS write drives every pool material at once.
+         ================================================================ */
+      var sharedU = {
+        uFly: { value: 0 },                                   // 0..1 fly-out progress
+        uReturn: { value: 0 },                                // 0..1 fly-home progress
+        uLyrPos: { value: new THREE.Vector3(0, 2.35, 5) },    // glyph centre, world space
+        uLyrCos: { value: 1 },
+        uLyrSin: { value: 0 },
+        uCharLit: { value: 99 },                              // chars lit so far (per-char brighten)
+        uBreath: { value: 0 },                                // hold-phase breathing shimmer 0..1
+        uWindDir: { value: new THREE.Vector3(0.85, 0.2, 0.3) },   // per-anchor exit wind
+        uWindAmt: { value: 0.9 },
+        uRibbonAmp: { value: 0.07 }                           // stardust ribbon undulation
+      };
+
+      var VERT = [
+        'attribute float aSize;',
+        'attribute vec3 aColor;',
+        'attribute float aPhase;',
+        'attribute float aSpeed;',
+        'attribute vec3 aDir;',
+        'attribute float aOrbit;',   // angular speed around the tree (rad/s, 0 = static)
+        'attribute vec3 aLyr;',      // glyph target, glyph-local space
+        'attribute float aLyrOn;',   // 1 when borrowed by the current line
+        'attribute float aDelay;',   // per-particle stagger 0..1
+        'attribute float aChar;',    // which character this particle belongs to
+        'uniform float uTime;',
+        'uniform float uSpread;',
+        'uniform float uPR;',
+        'uniform float uSnow;',
+        'uniform vec3 uRipplePos;',
+        'uniform float uRippleT;',
+        'uniform float uFly;',
+        'uniform float uReturn;',
+        'uniform vec3 uLyrPos;',
+        'uniform float uLyrCos;',
+        'uniform float uLyrSin;',
+        'uniform float uCharLit;',
+        'uniform float uBreath;',
+        'uniform vec3 uWindDir;',
+        'uniform float uWindAmt;',
+        'uniform float uRibbonAmp;',
+        'uniform float uGust;',
+        'varying vec3 vColor;',
+        'varying float vTw;',
+        'varying float vDim;',
+        'void main(){',
+        '  vec3 p = position;',
+        '  float tw = 0.72 + 0.28 * sin(uTime * aSpeed + aPhase);',
+        '  float dim = 1.0;',
+        '  float shrink = 1.0;',
+        '  vec3 col = aColor;',
+        '  if (uSnow > 0.5) {',
+        '    p.y = mod(p.y - uTime * aSpeed * 0.55, 20.0) - 3.0;',
+        '    p.x += sin(uTime * 0.7 + aPhase) * 0.35 + uGust * (p.y * 0.09 - 0.9);',
+        '    p.z += cos(uTime * 0.5 + aPhase) * 0.25;',
+        '    tw = 0.8 + 0.2 * sin(uTime * aSpeed + aPhase);',
+        '  } else {',
+        // slow coherent spin around the tree axis: tree particles all
+        // share (nearly) one angular speed, so the tree turns as a
+        // whole without smearing. Applied before the lyric morph, so
+        // a borrowed particle leaves from wherever the spin has
+        // carried it and returns to the same moving tree slot.
+        '    float oa = uTime * aOrbit;',
+        '    float oc = cos(oa); float os = sin(oa);',
+        '    p.xz = mat2(oc, -os, os, oc) * p.xz;',
+        '    p.y += sin(uTime * 0.6 + aPhase) * 0.04;',
+        '    p += aDir * uSpread;',
+        '    if (uRippleT >= 0.0) {',
+        '      float d = distance(p, uRipplePos);',
+        '      float wave = uRippleT * 3.4;',
+        '      float band = exp(-pow((d - wave) * 2.2, 2.0));',
+        '      vec3 away = p - uRipplePos;',
+        '      float al = max(length(away), 0.001);',
+        '      p += (away / al) * band * 0.38;',
+        '      tw += band * 1.3;',
+        '    }',
+        // ---- shared-pool lyric morph: home <-> glyph, same particle ----
+        '    if (aLyrOn > 0.5) {',
+        '      float po = clamp((uFly - aDelay * 0.55) / 0.45, 0.0, 1.0);',
+        '      po = po * po * (3.0 - 2.0 * po);',
+        '      float pr = clamp((uReturn - (1.0 - aDelay) * 0.55) / 0.45, 0.0, 1.0);',
+        '      pr = pr * pr * (3.0 - 2.0 * pr);',
+        '      float m = po * (1.0 - pr);',
+        '      if (m > 0.001) {',
+        '        vec3 gw = uLyrPos + vec3(',
+        '          aLyr.x * uLyrCos + aLyr.z * uLyrSin,',
+        '          aLyr.y,',
+        '          -aLyr.x * uLyrSin + aLyr.z * uLyrCos);',
+        '        if (aChar < -0.5) gw.y += sin(uTime * 1.35 + aLyr.x * 1.15) * uRibbonAmp;',   // ribbon bands undulate
+        '        vec3 mp = mix(p, gw, m);',
+        '        mp.y += sin(m * 3.14159) * (0.55 + 0.4 * sin(aPhase * 7.0));',  // arc lift
+        // ribbon-stream inflow: particles corkscrew gently as they
+        // travel, so the swarm reads as a flowing band of dust,
+        // not a straight-line lerp between tree and glyph
+        '        float sw = sin(m * 3.14159);',
+        '        mp.x += cos(aPhase * 7.0 + m * 6.2831) * sw * 0.34;',
+        '        mp.z += sin(aPhase * 7.0 + m * 6.2831) * sw * 0.34;',
+        '        mp.y += sin(aPhase * 5.0 + m * 4.0) * sw * 0.12;',
+        // wind-swept exit: mid-return the swarm curls downwind,
+        // then still lands back on its exact tree slot
+        '        float wv = sin(pr * 3.14159);',
+        '        mp += uWindDir * (wv * wv) * uWindAmt * (0.6 + 0.5 * sin(aPhase * 9.0));',
+        '        p = mp;',
+        '        float rib = step(aChar, -0.5);',
+        '        col = mix(col, vec3(1.0, 0.87, 0.62), m * mix(0.88, 0.45, rib));',   // warm glyph gold; the ribbon stays faint
+        '        tw *= 1.0 + m * 0.45;',
+        // breathing light: while the line is held, a slow shimmer
+        // travels from character to character
+        '        tw *= 1.0 + (1.0 - rib) * uBreath * m * 0.16 * sin(uTime * 1.7 - aChar * 0.6);',
+        '        dim = mix(1.0, rib > 0.5 ? 0.5 : (aChar <= uCharLit ? 1.0 : 0.32), m);',   // chars light in turn; ribbon at half glow
+        '        shrink = mix(1.0, 0.82, m) * (1.0 + 0.3 * sw);',   // stream swell mid-flight
+        '      }',
+        '    }',
+        '  }',
+        '  vColor = col;',
+        '  vTw = tw;',
+        '  vDim = dim;',
+        '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
+        '  gl_PointSize = aSize * shrink * uPR * (150.0 / max(1.0, -mv.z)) * (0.85 + 0.3 * tw);',
+        '  gl_Position = projectionMatrix * mv;',
+        '}'
+      ].join('\n');
+
+      // Sharp sprite: near-solid bright core + tight, fast-decaying halo.
+      // The old soft disc (pow 1.7 over the full radius) is what read as fog.
+      var FRAG = [
+        'uniform float uOpacity;',
+        'varying vec3 vColor;',
+        'varying float vTw;',
+        'varying float vDim;',
+        'void main(){',
+        '  vec2 uv = gl_PointCoord - 0.5;',
+        '  float d = length(uv);',
+        '  float core = smoothstep(0.15, 0.03, d);',              // hard, pin-sharp bright core
+        '  float halo = pow(smoothstep(0.5, 0.0, d), 3.8);',     // tight halo, dies fast
+        '  float a = clamp(core + halo * 0.5, 0.0, 1.0);',
+        '  vec3 col = vColor * vTw * (0.9 + 2.1 * core);',       // white-hot centre, coloured rim
+        '  gl_FragColor = vec4(col, a * uOpacity * vDim);',
+        '}'
+      ].join('\n');
+
+      var animatedMats = [];
+      function makePointsMaterial(opts) {
+        var mat = new THREE.ShaderMaterial({
+          vertexShader: VERT,
+          fragmentShader: FRAG,
+          uniforms: {
+            uTime: { value: 0 },
+            uSpread: { value: 0 },
+            uPR: { value: DPR },
+            uSnow: { value: opts.snow ? 1 : 0 },
+            uOpacity: { value: opts.opacity != null ? opts.opacity : 1 },
+            uRipplePos: { value: new THREE.Vector3(0, -99, 0) },
+            uRippleT: { value: -1 },
+            uFly: sharedU.uFly,
+            uReturn: sharedU.uReturn,
+            uLyrPos: sharedU.uLyrPos,
+            uLyrCos: sharedU.uLyrCos,
+            uLyrSin: sharedU.uLyrSin,
+            uCharLit: sharedU.uCharLit,
+            uBreath: sharedU.uBreath,
+            uWindDir: sharedU.uWindDir,
+            uWindAmt: sharedU.uWindAmt,
+            uRibbonAmp: sharedU.uRibbonAmp,
+            uGust: { value: 0 }
+          },
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          transparent: true
+        });
+        animatedMats.push(mat);
+        return mat;
+      }
+
+      function buildPoints(count, filler, matOpts) {
+        var pos = new Float32Array(count * 3);
+        var col = new Float32Array(count * 3);
+        var size = new Float32Array(count);
+        var phase = new Float32Array(count);
+        var speed = new Float32Array(count);
+        var dir = new Float32Array(count * 3);
+        var outer = new Float32Array(count);   // 0 = deep inside, 1 = silhouette edge
+        var orb = new Float32Array(count);
+        var tmp = { p: [0, 0, 0], c: [1, 1, 1], s: 1, sp: 1, d: [0, 1, 0], outer: 0, orb: 0 };
+        for (var i = 0; i < count; i++) {
+          tmp.outer = 0;
+          tmp.orb = 0;
+          filler(i, tmp);
+          pos[i * 3] = tmp.p[0]; pos[i * 3 + 1] = tmp.p[1]; pos[i * 3 + 2] = tmp.p[2];
+          col[i * 3] = tmp.c[0]; col[i * 3 + 1] = tmp.c[1]; col[i * 3 + 2] = tmp.c[2];
+          size[i] = tmp.s;
+          phase[i] = Math.random() * Math.PI * 2;
+          speed[i] = tmp.sp;
+          outer[i] = tmp.outer;
+          orb[i] = tmp.orb;
+          var dl = Math.sqrt(tmp.d[0] * tmp.d[0] + tmp.d[1] * tmp.d[1] + tmp.d[2] * tmp.d[2]) || 1;
+          dir[i * 3] = tmp.d[0] / dl; dir[i * 3 + 1] = tmp.d[1] / dl; dir[i * 3 + 2] = tmp.d[2] / dl;
+        }
+        var g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+        g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+        g.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+        g.setAttribute('aSpeed', new THREE.BufferAttribute(speed, 1));
+        g.setAttribute('aDir', new THREE.BufferAttribute(dir, 3));
+        g.setAttribute('aOrbit', new THREE.BufferAttribute(orb, 1));
+        // lyric-pool attributes, idle until a line borrows this particle
+        g.setAttribute('aLyr', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+        g.setAttribute('aLyrOn', new THREE.BufferAttribute(new Float32Array(count), 1));
+        g.setAttribute('aDelay', new THREE.BufferAttribute(new Float32Array(count), 1));
+        g.setAttribute('aChar', new THREE.BufferAttribute(new Float32Array(count), 1));
+        var pts = new THREE.Points(g, makePointsMaterial(matOpts || {}));
+        pts.frustumCulled = false;
+        pts.userData.outer = outer;
+        pts.userData.count = count;
+        return pts;
+      }
+
+      function randDir() {
+        var a = Math.random() * Math.PI * 2, b = Math.acos(2 * Math.random() - 1);
+        return [Math.sin(b) * Math.cos(a), Math.cos(b) * 0.6, Math.sin(b) * Math.sin(a)];
+      }
+
+      /* ---------------- the great tree's measure ---------------- */
+      var TREE_H = 8.8, TREE_R = 3.15;
+      var GOLDEN = 2.39996;
+
+      /* ---------------- the light-particle tree: the one shared pool ----------------
+         The centre tree IS particles again — thousands of sharp,
+         multicolour light points packed into a fir silhouette:
+         dense and bright on the surface, sparser inside, with a
+         thin stardust halo drifting around the outside. This is
+         still the single pool the lyrics borrow from: a line's
+         particles leave the tree body itself, gather into glyphs,
+         then fly home to the very same tree slots, so the tree
+         visibly thins where they left and refills as they return.
+         Gold and warm white lead; red, green, pink and ice blue
+         are the tree's own coloured lights. */
+      /* Branch-clustered distribution: particles cling to a skeleton
+         of drooping boughs instead of filling a smooth cone evenly,
+         so the silhouette has clumps, gaps and wispy tips — a fir,
+         not a diagram. A sparse interior fill keeps the gaps reading
+         as depth, and a thin stardust halo drifts outside. Brightness
+         and colour balance are unchanged from the approved pool. */
+      var treePts = (function () {
+        var pts = [];
+        var NB = 34;
+        for (var b = 0; b < NB; b++) {
+          var fb = b / (NB - 1);
+          var baseY = 0.35 + Math.pow(fb, 1.12) * (TREE_H - 0.9);
+          var maxLen = TREE_R * Math.pow(Math.max(0.02, 1 - baseY / TREE_H), 0.82) * (0.8 + Math.random() * 0.5);
+          var bang = b * GOLDEN + (Math.random() - 0.5) * 0.7;
+          var droop = 0.30 + Math.random() * 0.22;
+          var dead = Math.random() * Math.PI * 2;   // this bough's thin sector
+          var n = Math.round(70 + (1 - fb) * 170);
+          for (var j = 0; j < n; j++) {
+            var s = Math.pow(Math.random(), 0.78);
+            var la = bang + (Math.random() - 0.5) * 0.55 * (1 - s * 0.4);
+            var dAng = Math.atan2(Math.sin(la - dead), Math.cos(la - dead));
+            if (Math.abs(dAng) < 0.5 && Math.random() < 0.8) continue;   // a gap in the bough
+            var lr = s * maxLen;
+            var px = Math.cos(bang) * lr, pz = Math.sin(bang) * lr;
+            var py = baseY - Math.sin(s * Math.PI * 0.5) * droop * maxLen * 0.42 + (Math.random() - 0.5) * 0.1;
+            var jr = (0.10 + 0.30 * (1 - s * 0.5)) * Math.sqrt(Math.random());
+            var ja = Math.random() * Math.PI * 2;
+            px += Math.cos(ja) * jr; pz += Math.sin(ja) * jr;
+            py += Math.sin(ja) * jr * 0.5;
+            pts.push({ p: [px, py, pz], outer: s > 0.55 ? 1 : 0.4, orb: 0.045, dir: null });
+          }
+        }
+        for (var k = 0; k < 900; k++) {
+          var iy = Math.pow(Math.random(), 0.95) * TREE_H * 0.96;
+          var iprof = TREE_R * Math.pow(Math.max(0, 1 - iy / TREE_H), 0.9);
+          var ir = iprof * Math.sqrt(Math.random()) * 0.62;
+          var ia = Math.random() * Math.PI * 2;
+          pts.push({ p: [Math.cos(ia) * ir, iy, Math.sin(ia) * ir], outer: 0.3, orb: 0.045, dir: null });
+        }
+        for (var h = 0; h < 900; h++) {
+          var hy = Math.pow(Math.random(), 1.1) * 10.2;
+          var hprof = TREE_R * Math.pow(Math.max(0, 1 - hy / TREE_H), 0.85) + 0.12;
+          var hrr = hprof + 0.9 + Math.random() * 2.4;
+          var hang = Math.random() * Math.PI * 2;
+          pts.push({
+            p: [Math.cos(hang) * hrr, hy + (Math.random() - 0.5) * 0.4, Math.sin(hang) * hrr],
+            outer: 1, orb: 0.03 + Math.random() * 0.04,
+            dir: [Math.cos(hang), 0.25, Math.sin(hang)]
+          });
+        }
+        // shuffle so any subset the lyrics borrow is spread over the whole tree
+        for (var m = pts.length - 1; m > 0; m--) {
+          var q = (Math.random() * (m + 1)) | 0;
+          var tmp = pts[m]; pts[m] = pts[q]; pts[q] = tmp;
+        }
+        return pts;
+      })();
+      var orbit = buildPoints(6800, function (i, t) {
+        var P = treePts[i % treePts.length];
+        t.p = P.p;
+        t.d = P.dir || [P.p[0], 0.2, P.p[2]];
+        t.outer = P.outer;
+        t.orb = P.orb;
+        var pick = Math.random();
+        if (pick < 0.34) t.c = [1.0, 0.76 + Math.random() * 0.14, 0.32 + Math.random() * 0.14];
+        else if (pick < 0.5) t.c = [1.0, 0.93, 0.74];
+        else if (pick < 0.63) t.c = [1.0, 0.3, 0.24];
+        else if (pick < 0.76) t.c = [0.42, 1.0, 0.56];
+        else if (pick < 0.86) t.c = [1.0, 0.52, 0.7];
+        else if (pick < 0.95) t.c = [0.52, 0.74, 1.0];
+        else t.c = [0.62, 0.98, 0.95];
+        // wide size spread: many small embers, a few large lanterns
+        var sr = Math.random();
+        t.s = sr < 0.62 ? 0.22 + Math.random() * 0.18 : (sr < 0.92 ? 0.42 + Math.random() * 0.24 : 0.68 + Math.random() * 0.34);
+        if (P.outer < 0.5) t.s *= 0.8;
+        t.sp = 0.8 + Math.random() * 1.9;
+      }, { opacity: 1 });
+      orbit.renderOrder = 3;   // pool draws above the glyph backdrop
+      scene.add(orbit);
+      // a slim trunk of warm points and a red skirt disc, so the
+      // particle tree stands on something in the dark
+      (function () {
+        var trunkPts = buildPoints(90, function (i, t2) {
+          var a = Math.random() * Math.PI * 2, r = Math.random() * 0.16;
+          t2.p = [Math.cos(a) * r, Math.random() * 0.55, Math.sin(a) * r];
+          t2.d = [0, 1, 0];
+          t2.c = [1.0, 0.62, 0.3];
+          t2.s = 0.18 + Math.random() * 0.14;
+          t2.sp = 0.6 + Math.random();
+        }, { opacity: 0.9 });
+        scene.add(trunkPts);
+        var skirt = new THREE.Mesh(new THREE.ConeGeometry(1.05, 0.3, 20),
+          new THREE.MeshStandardMaterial({ color: 0x5e1620, roughness: 0.8 }));
+        skirt.position.y = 0.15;
+        scene.add(skirt);
+      })();
+
+      var POOL = [orbit];
+      function shuffledIndices(n) {
+        var a = [];
+        for (var i = 0; i < n; i++) a.push(i);
+        for (var j = n - 1; j > 0; j--) {
+          var k = (Math.random() * (j + 1)) | 0;
+          var t = a[j]; a[j] = a[k]; a[k] = t;
+        }
+        return a;
+      }
+
+      /* ---------------- tree-top star ---------------- */
+      function glowTexture(star) {
+        var c = document.createElement('canvas'); c.width = c.height = 512;
+        var x = c.getContext('2d');
+        if (star) {
+          x.translate(256, 256);
+          var grd = x.createRadialGradient(0, 0, 0, 0, 0, 256);
+          grd.addColorStop(0, 'rgba(255,240,200,0.55)');
+          grd.addColorStop(0.35, 'rgba(255,210,120,0.18)');
+          grd.addColorStop(1, 'rgba(255,200,100,0)');
+          x.fillStyle = grd; x.fillRect(-256, -256, 512, 512);
+          // fine cross glint through the star's heart
+          var ray = x.createLinearGradient(-300, 0, 300, 0);
+          ray.addColorStop(0, 'rgba(255,242,205,0)');
+          ray.addColorStop(0.5, 'rgba(255,242,205,0.5)');
+          ray.addColorStop(1, 'rgba(255,242,205,0)');
+          x.fillStyle = ray;
+          x.fillRect(-300, -3, 600, 6);
+          x.save(); x.rotate(Math.PI / 2); x.fillRect(-300, -3, 600, 6); x.restore();
+          x.fillStyle = 'rgba(255,246,220,1)';
+          x.beginPath();
+          for (var i = 0; i < 10; i++) {
+            var r = i % 2 === 0 ? 118 : 46;
+            var a = -Math.PI / 2 + i * Math.PI / 5;
+            var px = Math.cos(a) * r, py = Math.sin(a) * r;
+            if (i === 0) x.moveTo(px, py); else x.lineTo(px, py);
+          }
+          x.closePath(); x.fill();
+          x.fillStyle = 'rgba(255,255,255,0.98)';
+          x.beginPath(); x.arc(0, 0, 20, 0, Math.PI * 2); x.fill();
+        } else {
+          var g2 = x.createRadialGradient(256, 256, 0, 256, 256, 256);
+          g2.addColorStop(0, 'rgba(255,255,255,1)');
+          g2.addColorStop(0.25, 'rgba(255,255,255,0.4)');
+          g2.addColorStop(1, 'rgba(255,255,255,0)');
+          x.fillStyle = g2; x.fillRect(0, 0, 512, 512);
+        }
+        var tex = new THREE.CanvasTexture(c);
+        return tex;
+      }
+      var softTex = glowTexture(false);
+      var starSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture(true), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.95
+      }));
+      starSprite.position.set(0.1, TREE_H + 0.75, 0);
+      starSprite.scale.set(3.0, 3.0, 1);
+      scene.add(starSprite);
+      var starGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: softTex, color: 0xffc46a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.85
+      }));
+      starGlow.position.copy(starSprite.position);
+      starGlow.scale.set(5.6, 5.6, 1);
+      scene.add(starGlow);
+
+      /* ---------------- snow ground: undulating field, flat plaza heart ---------------- */
+      (function buildGround() {
+        var geo = new THREE.CircleGeometry(72, 110, 0, Math.PI * 2);
+        geo.rotateX(-Math.PI / 2);
+        var pos = geo.attributes.position;
+        for (var i = 0; i < pos.count; i++) {
+          var x = pos.getX(i), z = pos.getZ(i);
+          var r = Math.sqrt(x * x + z * z);
+          var h = (Math.sin(x * 0.16 + 1.7) * Math.cos(z * 0.13 + 0.4) * 0.55 + Math.sin(x * 0.05) * Math.cos(z * 0.07) * 0.8)
+            * THREE.MathUtils.smoothstep(r, 12, 30) * 0.85;
+          h += Math.sin(x * 1.4) * Math.cos(z * 1.2) * 0.03 * THREE.MathUtils.smoothstep(r, 3, 9);
+          pos.setY(i, h);
+        }
+        geo.computeVertexNormals();
+        var ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x66799c, roughness: 0.96, metalness: 0 }));
+        ground.receiveShadow = true;
+        scene.add(ground);
+        var plaza = new THREE.Mesh(
+          new THREE.CircleGeometry(6.4, 48).rotateX(-Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: 0x5f7194, roughness: 1 })
+        );
+        plaza.position.y = 0.006;
+        plaza.receiveShadow = true;
+        scene.add(plaza);
+      })();
+
+      // warm pool of light beneath the tree
+      function poolTexture(rgba) {
+        var c = document.createElement('canvas'); c.width = c.height = 256;
+        var x = c.getContext('2d');
+        var g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+        g.addColorStop(0, rgba[0]);
+        g.addColorStop(0.55, rgba[1]);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+        return new THREE.CanvasTexture(c);
+      }
+      var treePool = new THREE.Mesh(
+        new THREE.CircleGeometry(8.2, 40),
+        new THREE.MeshBasicMaterial({
+          map: poolTexture(['rgba(255,196,116,0.62)', 'rgba(255,160,90,0.22)']),
+          blending: THREE.AdditiveBlending, depthWrite: false, transparent: true
+        })
+      );
+      treePool.rotation.x = -Math.PI / 2;
+      treePool.position.y = 0.01;
+      scene.add(treePool);
+
+      /* ---------------- ground sparkle (denser, brighter) ---------------- */
+      var sparkle = buildPoints(950, function (i, t) {
+        var ang = Math.random() * Math.PI * 2;
+        var rr = Math.sqrt(Math.random()) * 15;
+        t.p = [Math.cos(ang) * rr, 0.03, Math.sin(ang) * rr];
+        t.d = [0, 1, 0];
+        var pick = Math.random();
+        t.c = pick < 0.5 ? [0.9, 0.96, 1.0] : (pick < 0.8 ? [1.0, 0.93, 0.7] : [0.72, 0.86, 1.0]);
+        t.s = 0.15 + Math.random() * 0.22;
+        t.sp = 1.5 + Math.random() * 3.0;
+      }, { opacity: 0.95 });
+      scene.add(sparkle);
+
+      /* ---------------- falling snow ---------------- */
+      var snow = buildPoints(1500, function (i, t) {
+        t.p = [(Math.random() - 0.5) * 34, Math.random() * 20, (Math.random() - 0.5) * 34];
+        t.d = [0, 1, 0];
+        var b = 0.8 + Math.random() * 0.2;
+        t.c = [b * 0.92, b * 0.96, b];
+        t.s = 0.19 + Math.random() * 0.38;
+        t.sp = 0.45 + Math.random() * 0.95;
+      }, { snow: true, opacity: 0.92 });
+      scene.add(snow);
+
+      /* ---------------- sky stars (pale starfield, one notch brighter) ---------------- */
+      var sky = buildPoints(560, function (i, t) {
+        var ang = Math.random() * Math.PI * 2;
+        var el = 0.25 + Math.random() * 1.2;
+        var rr = 55;
+        t.p = [Math.cos(ang) * Math.cos(el) * rr, Math.sin(el) * rr, Math.sin(ang) * Math.cos(el) * rr];
+        t.d = [0, 1, 0];
+        var b = 0.55 + Math.random() * 0.45;
+        t.c = [b, b, b * 1.05];
+        t.s = 0.3 + Math.random() * 0.34;
+        t.sp = 0.4 + Math.random() * 1.0;
+      }, { opacity: 0.85 });
+      scene.add(sky);
+
+            /* ================================================================
+         TOWN — new pipeline: every solid is a loaded GLB model file
+         (CC0 / CC-BY via poly.pizza, credited in the footer). No
+         code-assembled houses, pines, lamps, stalls or cars — that
+         route is retired. Three.js only places the models, lights
+         them, and runs the snow, smoke, steam and light canopy.
+         There are no people anywhere in the scene.
+         ================================================================ */
+      var snowTargets = { benches: [], flats: [] };
+      var smokeSprites = [];
+      var dynMats = [];    // emissive window materials, breathing slowly
+      var dynLights = [];  // lamp point lights, flickering faintly
+      var townReady = false;
+
+      function mulberry32(seed) {
+        return function () {
+          seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+          var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      var srand = mulberry32(20261128);
+
+      /* ---- placement helpers (same approach as the approved still) ---- */
+      var shadowTexC = poolTexture(['rgba(0,0,0,0.85)', 'rgba(0,0,0,0)']);
+      var poolTexW = poolTexture(['rgba(255,255,255,0.9)', 'rgba(255,255,255,0)']);
+      function groundDisc(tex, color, opacity, blending, sx, sz, x, z, y) {
+        var m = new THREE.Mesh(
+          new THREE.PlaneGeometry(sx, sz),
+          new THREE.MeshBasicMaterial({ map: tex, color: color, transparent: true, opacity: opacity, blending: blending, depthWrite: false })
+        );
+        m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.renderOrder = 2;
+        scene.add(m); return m;
+      }
+      function contactShadow(x, z, sx, sz, opacity) { return groundDisc(shadowTexC, 0xffffff, opacity, THREE.NormalBlending, sx, sz, x, z, 0.015); }
+      function warmPool(x, z, r, opacity) { return groundDisc(poolTexW, 0xff9a3c, opacity, THREE.AdditiveBlending, r * 2, r * 2, x, z, 0.03); }
+      function glowSpr(x, y, z, scale, r, g, b, opacity) {
+        var s = new THREE.Sprite(new THREE.SpriteMaterial({ map: softTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: opacity }));
+        s.material.color.setRGB(r, g, b);
+        s.position.set(x, y, z); s.scale.setScalar(scale);
+        scene.add(s); return s;
+      }
+      function normalizeHeight(obj, targetH) {
+        var box = new THREE.Box3().setFromObject(obj);
+        var size = new THREE.Vector3(); box.getSize(size);
+        var s = targetH / size.y;
+        obj.scale.setScalar(s);
+        var box2 = new THREE.Box3().setFromObject(obj);
+        obj.position.x -= (box2.min.x + box2.max.x) / 2;
+        obj.position.z -= (box2.min.z + box2.max.z) / 2;
+        obj.position.y -= box2.min.y;
+        return obj;
+      }
+      function findMaterial(root, name) {
+        var found = null;
+        root.traverse(function (o) {
+          if (o.isMesh) {
+            var mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(function (m) { if (m && m.name === name) found = m; });
+          }
+        });
+        return found;
+      }
+      function setShadows(root) {
+        root.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      }
+      function darkenToSilhouette(root) {
+        root.traverse(function (o) {
+          if (o.isMesh) {
+            o.material = new THREE.MeshBasicMaterial({ color: 0x0a141f });
+            o.castShadow = false; o.receiveShadow = false;
+          }
+        });
+      }
+      function localToWorld(cx, cz, ry, lx, lz) {
+        var cs = Math.cos(ry), sn = Math.sin(ry);
+        return [cx + lx * cs + lz * sn, cz - lx * sn + lz * cs];
+      }
+
+      /* ---- snow as a material layer: flattened white shells that sit
+         on roofs, benches, cars and boxes, plus registered flat targets
+         so falling flakes visibly land and build up on the same spots ---- */
+      var SNOW_MAT = new THREE.MeshStandardMaterial({ color: 0xc9d6e8, roughness: 1 });
+      function snowCap(parent, x, y, z, sx, sy, sz, rx) {
+        var m = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), SNOW_MAT);
+        m.position.set(x, y, z); m.scale.set(sx, sy, sz);
+        if (rx) m.rotation.x = rx;
+        m.receiveShadow = true;
+        parent.add(m); return m;
+      }
+      function addSmoke(x, y, z) {
+        for (var i = 0; i < 5; i++) {
+          var mat = new THREE.SpriteMaterial({
+            map: softTex, color: 0x93a9c6, depthWrite: false, transparent: true, opacity: 0
+          });
+          var puff = new THREE.Sprite(mat);
+          puff.position.set(x, y, z);
+          puff.userData.ph = i / 5 + srand() * 0.08;
+          puff.userData.baseX = x;
+          puff.userData.baseY = y;
+          scene.add(puff);
+          smokeSprites.push(puff);
+        }
+      }
+
+      /* ---------------- houses ----------------
+         Roof proportions per model type (fractions of normalised
+         height) drive both the static snow layer — ridge cap, eave
+         snow lines, slope slabs — and the accumulation targets, so
+         snow reads on the roof even before the first flake lands. */
+      function placeHouse(src, cfg) {
+        var g = new THREE.Group();
+        var h = normalizeHeight(src.clone(true), cfg.H);
+        setShadows(h);
+        g.add(h);
+        g.position.set(cfg.x, 0, cfg.z);
+        g.rotation.y = cfg.ry;
+        scene.add(g);
+        contactShadow(cfg.x, cfg.z, cfg.H * 1.55, cfg.H * 1.3, 0.5);
+        var ridgeY = cfg.H * cfg.ridge, eaveY = cfg.H * cfg.eave;
+        var halfD = cfg.H * cfg.halfD, halfW = cfg.H * cfg.halfW;
+        snowCap(g, 0, ridgeY - 0.06, 0, halfW * 0.8, 0.09, halfD * 0.22);
+        snowCap(g, 0, eaveY + 0.02, halfD, halfW * 0.88, 0.05, 0.11);
+        snowCap(g, 0, eaveY + 0.02, -halfD, halfW * 0.88, 0.05, 0.11);
+        [-0.55, 0, 0.55].forEach(function (f) {
+          var w = localToWorld(cfg.x, cfg.z, cfg.ry, f * halfW * 1.5, 0);
+          snowTargets.flats.push({ x: w[0], z: w[1], y: ridgeY + 0.05, r: 0.62 });
+        });
+        [-0.5, 0.5].forEach(function (f) {
+          [halfD, -halfD].forEach(function (lz) {
+            var w = localToWorld(cfg.x, cfg.z, cfg.ry, f * halfW * 1.5, lz);
+            snowTargets.flats.push({ x: w[0], z: w[1], y: eaveY + 0.06, r: 0.5 });
+          });
+        });
+        if (cfg.porch) {
+          var fw = localToWorld(cfg.x, cfg.z, cfg.ry, 2.1, 3.1);
+          var pl = new THREE.PointLight(0xffa64d, 10, 10, 2);
+          pl.position.set(fw[0], 1.6, fw[1]);
+          scene.add(pl);
+          warmPool(fw[0], fw[1], 2.1, 0.22);
+        }
+        return g;
+      }
+      var HOUSE_PROPS = {
+        cabin: { ridge: 0.86, eave: 0.55, halfD: 0.36, halfW: 0.44 },
+        inn:   { ridge: 0.95, eave: 0.62, halfD: 0.34, halfW: 0.42 },
+        white: { ridge: 0.94, eave: 0.60, halfD: 0.33, halfW: 0.40 }
+      };
+
+      /* ---------------- pines ---------------- */
+      function placePine(src, x, z, h, rot) {
+        var p = normalizeHeight(src.clone(true), h);
+        setShadows(p);
+        p.position.set(x, 0, z); p.rotation.y = rot;
+        scene.add(p);
+        contactShadow(x, z, 1.8, 1.8, 0.5);
+      }
+
+      /* ---------------- street lamps ---------------- */
+      var lampTops = [];
+      function placeLamp(src, x, z, withLight) {
+        var l = normalizeHeight(src.clone(true), 3.3);
+        setShadows(l);
+        l.position.set(x, 0, z);
+        scene.add(l);
+        lampTops.push([x, 3.15, z]);
+        contactShadow(x, z, 1.3, 1.3, 0.55);
+        warmPool(x, z, 3.0, 0.30);
+        glowSpr(x, 3.05, z, 1.7, 1.6, 1.05, 0.5, 0.32);
+        var cap = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.07, 10), SNOW_MAT);
+        cap.position.set(x, 3.37, z); cap.receiveShadow = true;
+        scene.add(cap);
+        snowTargets.flats.push({ x: x, z: z, y: 3.44, r: 0.2 });
+        if (withLight) {
+          var pl = new THREE.PointLight(0xffb45c, 14, 13, 2);
+          pl.position.set(x, 3.05, z);
+          scene.add(pl);
+          dynLights.push({ light: pl, base: 14, ph: srand() * 6, x: x, z: z, cue: 0 });
+        }
+      }
+
+      /* ---------------- market stalls ---------------- */
+      function placeStall(src, x, z, ry, roofColor, kind) {
+        var g = new THREE.Group();
+        var s = normalizeHeight(src.clone(true), 2.9);
+        s.traverse(function (o) {
+          if (o.isMesh) {
+            var mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(function (m, mi) {
+              if (m && m.name === 'RoofTiles_Red') {
+                var c = m.clone(); c.color = new THREE.Color(roofColor);
+                if (Array.isArray(o.material)) o.material[mi] = c; else o.material = c;
+              }
+            });
+          }
+        });
+        setShadows(s);
+        g.add(s);
+        // goods on the counter — small props, different per stall
+        var goods = new THREE.Group();
+        var gi;
+        if (kind === 'ornaments') {
+          var cols = [0xff5148, 0xffc44d, 0x5c99ff, 0xff8cc7, 0x7dffb8];
+          for (gi = 0; gi < 7; gi++) {
+            var ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8),
+              new THREE.MeshStandardMaterial({ color: cols[gi % 5], roughness: 0.35, emissive: cols[gi % 5], emissiveIntensity: 0.35 }));
+            ball.position.set(-0.75 + gi * 0.25, 1.12, 0.62);
+            goods.add(ball);
+          }
+        } else if (kind === 'ginger') {
+          for (gi = 0; gi < 5; gi++) {
+            var box = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, 0.24),
+              new THREE.MeshStandardMaterial({ color: 0x9a6136, roughness: 0.9 }));
+            box.position.set(-0.6 + gi * 0.3, 1.1, 0.62); box.rotation.y = (srand() - 0.5) * 0.5;
+            goods.add(box);
+          }
+        } else if (kind === 'chestnuts') {
+          for (gi = 0; gi < 9; gi++) {
+            var nut = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6),
+              new THREE.MeshStandardMaterial({ color: 0x4a2c17, roughness: 0.7 }));
+            nut.position.set(-0.5 + srand() * 1.0, 1.08 + srand() * 0.08, 0.62 + (srand() - 0.5) * 0.2);
+            goods.add(nut);
+          }
+        } else { // drinks: cups in a row
+          for (gi = 0; gi < 4; gi++) {
+            var cup = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.055, 0.16, 10),
+              new THREE.MeshStandardMaterial({ color: 0xf3e6cf, roughness: 0.6 }));
+            cup.position.set(-0.45 + gi * 0.3, 1.13, 0.62);
+            goods.add(cup);
+          }
+        }
+        g.add(goods);
+        g.position.set(x, 0, z);
+        g.rotation.y = ry;
+        scene.add(g);
+        contactShadow(x, z, 4.2, 3.2, 0.5);
+        snowCap(g, 0, 2.98, 0, 1.35, 0.09, 0.95);
+        snowTargets.flats.push({ x: x, z: z, y: 3.06, r: 0.95 });
+        var fw = localToWorld(x, z, ry, 0, 2.2);
+        warmPool(fw[0], fw[1], 1.9, 0.2);
+        if (kind === 'drinks') addSmoke(fw[0], 1.5, fw[1]);   // steam over the hot drinks
+        return g;
+      }
+
+      /* ---------------- benches facing the tree ---------------- */
+      function placeBench(src, a) {
+        var x = Math.cos(a) * 5.7, z = Math.sin(a) * 5.7;
+        var g = new THREE.Group();
+        var b = normalizeHeight(src.clone(true), 1.3);
+        setShadows(b);
+        g.add(b);
+        snowCap(g, 0, 0.66, 0.05, 1.05, 0.06, 0.3);
+        snowCap(g, 0, 1.3, -0.3, 1.05, 0.05, 0.1);
+        g.position.set(x, 0, z);
+        g.rotation.y = -a - Math.PI / 2;
+        scene.add(g);
+        contactShadow(x, z, 2.6, 1.4, 0.45);
+        [-0.55, 0.55].forEach(function (off) {
+          var w = localToWorld(x, z, -a - Math.PI / 2, off, 0.05);
+          snowTargets.flats.push({ x: w[0], z: w[1], y: 0.7, r: 0.62 });
+          var w2 = localToWorld(x, z, -a - Math.PI / 2, off, -0.3);
+          snowTargets.flats.push({ x: w2[0], z: w2[1], y: 1.34, r: 0.5 });
+        });
+      }
+
+      /* ---------------- cars parked along the street ---------------- */
+      function placeCar(src, x, z, ry, tint) {
+        var g = new THREE.Group();
+        var c = src.clone(true);
+        if (tint) {
+          c.traverse(function (o) {
+            if (o.isMesh) {
+              var mats = Array.isArray(o.material) ? o.material : [o.material];
+              mats.forEach(function (m, mi) {
+                if (m && m.name === 'LightBlue') {
+                  var cl = m.clone(); cl.color = new THREE.Color(tint);
+                  if (Array.isArray(o.material)) o.material[mi] = cl; else o.material = cl;
+                }
+              });
+            }
+          });
+        }
+        c = normalizeHeight(c, 1.5);
+        setShadows(c);
+        var box = new THREE.Box3().setFromObject(c);
+        var size = new THREE.Vector3(); box.getSize(size);
+        var inner = new THREE.Group();
+        inner.add(c);
+        if (size.z > size.x) inner.rotation.y = Math.PI / 2;
+        var len = Math.max(size.x, size.z), wid = Math.min(size.x, size.z);
+        g.add(inner);
+        snowCap(g, 0, 1.53, 0, len * 0.3, 0.055, wid * 0.36);
+        g.position.set(x, 0, z);
+        g.rotation.y = ry;
+        scene.add(g);
+        contactShadow(x, z, len * 1.05, wid * 1.25, 0.5);
+        snowTargets.flats.push({ x: x, z: z, y: 1.6, r: 0.85 });
+        // headlight pools + tail glow (front = local +x)
+        var f1 = localToWorld(x, z, ry, len / 2 + 1.1, wid * 0.28);
+        var f2 = localToWorld(x, z, ry, len / 2 + 1.1, -wid * 0.28);
+        warmPool(f1[0], f1[1], 1.7, 0.3); warmPool(f2[0], f2[1], 1.7, 0.3);
+        var hg = localToWorld(x, z, ry, len / 2 + 0.15, 0);
+        glowSpr(hg[0], 0.55, hg[1], 1.5, 1.5, 1.1, 0.6, 0.3);
+        var tg = localToWorld(x, z, ry, -len / 2 - 0.1, 0);
+        glowSpr(tg[0], 0.6, tg[1], 0.9, 1.4, 0.25, 0.18, 0.3);
+      }
+
+      /* ---------------- a snowman keeping watch by the benches ---------------- */
+      (function buildSnowman() {
+        var g = new THREE.Group();
+        var snowM = new THREE.MeshStandardMaterial({ color: 0xe9eff7, roughness: 0.95 });
+        function ball(r, y) {
+          var m = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), snowM);
+          m.position.y = y; m.castShadow = true; m.receiveShadow = true; g.add(m);
+        }
+        ball(0.62, 0.55); ball(0.45, 1.32); ball(0.32, 1.92);
+        var coalM = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.6 });
+        [[-0.1, 2.02, 0.27], [0.1, 2.02, 0.27], [0, 1.42, 0.42], [0, 1.24, 0.44], [0, 0.72, 0.56]].forEach(function (cc) {
+          var dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), coalM);
+          dot.position.set(cc[0], cc[1], cc[2]); g.add(dot);
+        });
+        var carrot = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.36, 10),
+          new THREE.MeshStandardMaterial({ color: 0xe07b2a, roughness: 0.8 }));
+        carrot.rotation.x = Math.PI / 2; carrot.position.set(0, 1.94, 0.42); g.add(carrot);
+        var hatM = new THREE.MeshStandardMaterial({ color: 0x1b1e26, roughness: 0.7 });
+        var brim = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.05, 16), hatM);
+        brim.position.y = 2.18; g.add(brim);
+        var top = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.3, 16), hatM);
+        top.position.y = 2.34; g.add(top);
+        var scarf = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.09, 8, 18),
+          new THREE.MeshStandardMaterial({ color: 0x9e2436, roughness: 0.95 }));
+        scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.64; g.add(scarf);
+        [-1, 1].forEach(function (sgn) {
+          var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.85, 6),
+            new THREE.MeshStandardMaterial({ color: 0x4c3621, roughness: 0.95 }));
+          arm.position.set(sgn * 0.5, 1.42, 0);
+          arm.rotation.z = sgn * 1.05;
+          g.add(arm);
+        });
+        g.position.set(-6.3, 0, -1.6);
+        g.rotation.y = 0.7;
+        g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+        scene.add(g);
+        snowTargets.flats.push({ x: -6.3, z: -1.6, y: 2.52, r: 0.26 });
+      })();
+
+      /* ---------------- plaza stone rings, trodden path, snow piles ---------------- */
+      (function buildPlaza() {
+        [[4.3, 4.58], [6.2, 6.45], [8.75, 8.95]].forEach(function (rr) {
+          var ring = new THREE.Mesh(
+            new THREE.RingGeometry(rr[0], rr[1], 64).rotateX(-Math.PI / 2),
+            new THREE.MeshStandardMaterial({ color: 0x46536c, roughness: 1 })
+          );
+          ring.position.y = 0.012; ring.receiveShadow = true;
+          scene.add(ring);
+        });
+        var path = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.7, 6.4).rotateX(-Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: 0x4a5872, roughness: 1 })
+        );
+        path.position.set(3.1, 0.013, 8.6); path.rotation.y = 0.35; path.receiveShadow = true;
+        scene.add(path);
+        [[9.8, 0.7], [10.6, 2.4], [-10.2, 1.2], [-9.6, -2.8], [6.5, -8.6], [-5.5, 8.9], [3.2, 9.7], [-8.8, -7.5]].forEach(function (pl, i) {
+          snowCap(scene, pl[0], 0.02, pl[1], 0.8 + srand() * 0.6, 0.22 + srand() * 0.18, 0.7 + srand() * 0.4);
+        });
+      })();
+
+      /* ---------------- load the town ---------------- */
+      var townLoader = new THREE.GLTFLoader();
+      function loadGLB(url) { return townLoader.loadAsync(url); }
+      Promise.all([
+        loadGLB('assets/house-cabin.glb'),
+        loadGLB('assets/house-inn.glb'),
+        loadGLB('assets/house-white.glb'),
+        loadGLB('assets/pine.glb'),
+        loadGLB('assets/lamp.glb'),
+        loadGLB('assets/stall.glb'),
+        loadGLB('assets/fence.glb'),
+        loadGLB('assets/present.glb'),
+        loadGLB('assets/bench.glb'),
+        loadGLB('assets/car.glb'),
+        loadGLB('assets/mailbox.glb'),
+        loadGLB('assets/belltower.glb')
+      ]).then(function (res) {
+        var cabinG = res[0].scene, innG = res[1].scene, whiteG = res[2].scene,
+            pineG = res[3].scene, lampG = res[4].scene, stallG = res[5].scene,
+            fenceG = res[6].scene, presentG = res[7].scene, benchG = res[8].scene,
+            carG = res[9].scene, mailboxG = res[10].scene, towerG = res[11].scene;
+
+        /* emissive windows / bulbs / car lights, set once on the shared
+           source materials so every clone glows the same way */
+        var glass = findMaterial(cabinG, 'mat24');
+        if (glass) {
+          glass.emissive = new THREE.Color(1.0, 0.58, 0.22);
+          glass.emissiveIntensity = 2.4;
+          dynMats.push({ mat: glass, base: 2.4, sp: 0.9, ph: 1.7 });
+        }
+        var innWin = findMaterial(innG, 'Windows');
+        if (innWin) {
+          innWin.emissive = new THREE.Color(1.0, 0.62, 0.26);
+          innWin.emissiveIntensity = 2.6;
+          dynMats.push({ mat: innWin, base: 2.6, sp: 0.7, ph: 4.2 });
+        }
+        var whiteWin = findMaterial(whiteG, 'DarkGrey');
+        if (whiteWin) {
+          whiteWin.emissive = new THREE.Color(1.0, 0.6, 0.24);
+          whiteWin.emissiveIntensity = 1.7;
+        }
+        var bulbMat = findMaterial(lampG, 'lambert4SG');
+        if (bulbMat) {
+          bulbMat.emissive = new THREE.Color(1.0, 0.82, 0.55);
+          bulbMat.emissiveIntensity = 5.0;
+        }
+        var headMat = findMaterial(carG, 'Headlights');
+        if (headMat) { headMat.emissive = new THREE.Color(1.0, 0.85, 0.58); headMat.emissiveIntensity = 3.2; }
+        var tailMat = findMaterial(carG, 'TailLights');
+        if (tailMat) { tailMat.emissive = new THREE.Color(1.0, 0.16, 0.12); tailMat.emissiveIntensity = 2.2; }
+        var towerWin = findMaterial(towerG, 'Windows');
+        if (towerWin) {
+          towerWin.emissive = new THREE.Color(1.0, 0.66, 0.3);
+          towerWin.emissiveIntensity = 1.9;
+          dynMats.push({ mat: towerWin, base: 1.9, sp: 0.5, ph: 2.6 });
+        }
+
+        /* houses — a ring of lit homes around the plaza */
+        placeHouse(cabinG, Object.assign({ x: -8.2, z: -6.4, ry: 0.62, H: 5.6, porch: true }, HOUSE_PROPS.cabin));
+        placeHouse(innG, Object.assign({ x: 7.6, z: -7.4, ry: -0.55, H: 6.6, porch: true }, HOUSE_PROPS.inn));
+        placeHouse(whiteG, Object.assign({ x: 0.8, z: -13.2, ry: 0.12, H: 6.2 }, HOUSE_PROPS.white));
+        placeHouse(innG, Object.assign({ x: -12.8, z: 1.6, ry: 1.25, H: 5.6 }, HOUSE_PROPS.inn));
+        placeHouse(whiteG, Object.assign({ x: 13.0, z: 0.8, ry: -1.15, H: 5.9 }, HOUSE_PROPS.white));
+
+        /* chimney smoke over the cabin (local chimney point, rotated out) */
+        var chim = localToWorld(-8.2, -6.4, 0.62, 1.76, -0.52);
+        addSmoke(chim[0], 5.95, chim[1]);
+
+        /* pines — clusters, uneven heights */
+        placePine(pineG, -5.2, -3.0, 4.6, 0.7);
+        placePine(pineG, 4.7, -3.6, 5.5, 2.4);
+        placePine(pineG, -6.1, 0.8, 3.4, 1.5);
+        placePine(pineG, 10.6, -4.6, 6.8, 0.4);
+        placePine(pineG, -11.5, -3.4, 5.8, 2.9);
+        placePine(pineG, 3.2, 5.6, 3.1, 1.1);
+        placePine(pineG, -3.9, 4.9, 2.8, 2.2);
+        /* far silhouettes */
+        [[-12, -15.5, 9], [8.5, -16.5, 10.5], [14, -10.5, 8], [-15.5, -8, 7.5]].forEach(function (cfg) {
+          var p = normalizeHeight(pineG.clone(true), cfg[2]);
+          darkenToSilhouette(p);
+          p.position.set(cfg[0], -0.1, cfg[1]);
+          scene.add(p);
+        });
+        var farHouse = normalizeHeight(whiteG.clone(true), 7.2);
+        darkenToSilhouette(farHouse);
+        farHouse.position.set(-11, -0.1, -18.5); farHouse.rotation.y = 0.4;
+        scene.add(farHouse);
+
+        /* bell tower on the skyline */
+        var tower = normalizeHeight(towerG.clone(true), 11.5);
+        setShadows(tower);
+        tower.position.set(-4.0, -0.15, -19.0); tower.rotation.y = 0.15;
+        scene.add(tower);
+        contactShadow(-4.0, -19.0, 7.5, 6.5, 0.4);
+        glowSpr(-4.0, 4.6, -18.6, 2.6, 1.3, 0.85, 0.4, 0.3);
+
+        /* lamps */
+        placeLamp(lampG, 6.0, 1.6, true);
+        placeLamp(lampG, -6.2, 2.2, true);
+        placeLamp(lampG, 3.6, -6.6, false);
+        placeLamp(lampG, -3.9, -6.9, false);
+        placeLamp(lampG, 9.2, -2.6, false);
+
+        /* market stalls in a row along the back */
+        placeStall(stallG, -8.8, -11.2, 0.30, 0xb3402f, 'chestnuts');
+        placeStall(stallG, -5.2, -12.4, 0.15, 0x2f6e4f, 'drinks');
+        placeStall(stallG, -1.6, -13.0, 0.03, 0xb3402f, 'ornaments');
+        placeStall(stallG, 2.0, -13.2, -0.05, 0xc9862f, 'ginger');
+
+        /* benches */
+        [-0.75, 0.45, 1.65].forEach(function (a) { placeBench(benchG, a); });
+
+        /* cars along the front street */
+        placeCar(carG, -7.3, 11.3, 0.06, null);
+        placeCar(carG, 7.5, 11.5, -0.04, 0xa33327);
+
+        /* Santa mailbox by the road */
+        (function () {
+          var mb = normalizeHeight(mailboxG.clone(true), 1.2);
+          setShadows(mb);
+          mb.position.set(7.7, 0, -3.3); mb.rotation.y = -0.5;
+          scene.add(mb);
+          contactShadow(7.7, -3.3, 1.1, 1.1, 0.5);
+          var capG = new THREE.Group();
+          snowCap(capG, 0, 1.24, 0, 0.34, 0.06, 0.3);
+          capG.position.set(7.7, 0, -3.3); capG.rotation.y = -0.5;
+          scene.add(capG);
+          snowTargets.flats.push({ x: 7.7, z: -3.3, y: 1.3, r: 0.3 });
+        })();
+
+        /* picket fence ring around the tree (gap toward the viewer) */
+        (function buildFenceRing() {
+          fenceG.traverse(function (o) {
+            if (o.isMesh) {
+              var ms = Array.isArray(o.material) ? o.material : [o.material];
+              ms.forEach(function (m) { if (m.color) m.color.multiplyScalar(0.7); });
+            }
+          });
+          var probe = fenceG.clone(true);
+          var b = new THREE.Box3().setFromObject(probe);
+          var sz = new THREE.Vector3(); b.getSize(sz);
+          var segLen = 2.6;
+          var sx = segLen / sz.x, sy = (0.8 / sz.y) * 1.18;
+          var camAng = Math.atan2(Math.cos(0.55), Math.sin(0.55));
+          for (var k = 0; k < 11; k++) {
+            var a = (k / 11) * Math.PI * 2 + 0.35;
+            var diff = Math.abs(((a - camAng) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
+            if (diff > Math.PI - 0.85) continue;
+            var seg = fenceG.clone(true);
+            seg.scale.set(sx, sy, sx);
+            var px = Math.cos(a) * 4.05, pz = Math.sin(a) * 4.05;
+            var bb = new THREE.Box3().setFromObject(seg);
+            var cc = new THREE.Vector3(); bb.getCenter(cc);
+            seg.position.set(px - cc.x, -bb.min.y, pz - cc.z);
+            seg.rotation.y = -a + Math.PI / 2;
+            setShadows(seg);
+            scene.add(seg);
+          }
+        })();
+
+        /* presents heaped at the tree base */
+        (function buildPresents() {
+          var tints = [0xffffff, 0xffe3d0, 0xd8ecff, 0xfff2c8, 0xffd8e2, 0xe6ffd8, 0xffffff];
+          for (var pi = 0; pi < 7; pi++) {
+            var pr = presentG.clone(true);
+            var ph = 0.45 + srand() * 0.35;
+            pr = normalizeHeight(pr, ph);
+            pr.traverse(function (o) {
+              if (o.isMesh) {
+                o.material = o.material.clone();
+                if (o.material.color) o.material.color = new THREE.Color(tints[pi % tints.length]);
+              }
+            });
+            setShadows(pr);
+            var pa = srand() * Math.PI * 2, prad = 1.25 + srand() * 0.9;
+            var px2 = Math.cos(pa) * prad, pz2 = Math.sin(pa) * prad;
+            pr.position.set(px2, 0, pz2);
+            pr.rotation.y = srand() * Math.PI;
+            scene.add(pr);
+            snowTargets.flats.push({ x: px2, z: pz2, y: ph * 0.98, r: ph * 0.55 });
+          }
+          contactShadow(0, 0, 5.8, 5.8, 0.38);
+        })();
+
+        /* light canopy: catenary swags of bulbs between the lamps
+           and from every lamp up to the tree */
+        (function buildCanopy() {
+          var bulbCols = [[1.0, 0.32, 0.28], [1.0, 0.77, 0.3], [0.37, 0.6, 1.0], [1.0, 0.55, 0.78], [0.49, 1.0, 0.72]];
+          var pts = [];
+          function swag(p1, p2, sag, n) {
+            for (var i = 0; i <= n; i++) {
+              var f = i / n;
+              var x = p1[0] + (p2[0] - p1[0]) * f;
+              var y = p1[1] + (p2[1] - p1[1]) * f - Math.sin(f * Math.PI) * sag;
+              var z = p1[2] + (p2[2] - p1[2]) * f;
+              pts.push({ p: [x, y, z], c: bulbCols[(pts.length) % bulbCols.length] });
+            }
+          }
+          var treeTop = [0, 7.4, 0];
+          lampTops.forEach(function (L) { swag(L, treeTop, 0.5, 15); });
+          var sorted = lampTops.slice().sort(function (A, B) { return Math.atan2(A[2], A[0]) - Math.atan2(B[2], B[0]); });
+          for (var si = 0; si < sorted.length; si++) {
+            swag(sorted[si], sorted[(si + 1) % sorted.length], 0.65, 15);
+          }
+          var canopy = buildPoints(pts.length, function (i, t) {
+            t.p = pts[i].p;
+            t.d = [0, 1, 0];
+            t.c = pts[i].c;
+            t.s = 0.3 + (i % 5) * 0.035;
+            t.sp = 0.7 + (i % 7) * 0.31;
+          }, { opacity: 0.95 });
+          scene.add(canopy);
+        })();
+
+        townReady = true;
+      }).catch(function (e) {
+        if (window.console) console.error('town load failed', e);
+        townReady = true;   // never hold the page hostage to one model
+      });
+
+/* ================================================================
+         INTERACTIVE SNOWFALL — flakes land, stick, build up, melt.
+         A JS-simulated fall layer over the plaza (the shader snow
+         stays as far-field ambience). Each flake tests the surfaces
+         beneath it: the particle tree's cone profile, bench seats
+         and backrest tops, car roofs, gift lids and flat tops. On landing
+         it moves into the accumulation pool — one white point stuck
+         at that exact spot, fading in, then melting over ~30 s, so
+         the layer caps itself instead of growing forever.
+         ================================================================ */
+      function treeSurfaceY(r) {
+        if (r > 3.35) return -1;
+        var f = 1 - Math.pow(Math.max(0, r - 0.1) / 3.25, 1.25);
+        return f * TREE_H + 0.1;
+      }
+      var ACC_N = 2400;
+      var accGeo = new THREE.BufferGeometry();
+      var accPos = new Float32Array(ACC_N * 3);
+      var accBirth = new Float32Array(ACC_N);
+      var accLife = new Float32Array(ACC_N);
+      var accSize = new Float32Array(ACC_N);
+      for (var ai = 0; ai < ACC_N; ai++) { accBirth[ai] = -1000; accPos[ai * 3 + 1] = -50; }
+      accGeo.setAttribute('position', new THREE.BufferAttribute(accPos, 3));
+      accGeo.setAttribute('aBirth', new THREE.BufferAttribute(accBirth, 1));
+      accGeo.setAttribute('aLife', new THREE.BufferAttribute(accLife, 1));
+      accGeo.setAttribute('aSize', new THREE.BufferAttribute(accSize, 1));
+      var accMat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uPR: { value: DPR } },
+        vertexShader: [
+          'attribute float aBirth;',
+          'attribute float aLife;',
+          'attribute float aSize;',
+          'uniform float uTime;',
+          'uniform float uPR;',
+          'varying float vA;',
+          'void main(){',
+          '  float age = uTime - aBirth;',
+          '  float fi = smoothstep(0.0, 0.5, age);',
+          '  float fo = 1.0 - smoothstep(aLife - 7.0, aLife, age);',
+          '  vA = fi * fo;',
+          '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+          '  gl_PointSize = aSize * uPR * (150.0 / max(1.0, -mv.z));',
+          '  gl_Position = projectionMatrix * mv;',
+          '}'
+        ].join('\n'),
+        fragmentShader: [
+          'varying float vA;',
+          'void main(){',
+          '  vec2 uv = gl_PointCoord - 0.5;',
+          '  float a = smoothstep(0.5, 0.1, length(uv));',
+          '  gl_FragColor = vec4(0.93, 0.97, 1.0, a * vA * 0.95);',
+          '}'
+        ].join('\n'),
+        depthWrite: false,
+        transparent: true
+      });
+      animatedMats.push(accMat);
+      var accPts = new THREE.Points(accGeo, accMat);
+      accPts.frustumCulled = false;
+      accPts.renderOrder = 4;   // stuck snow draws over the tree pool
+      scene.add(accPts);
+      var accNext = 0;
+      function addAccum(x, y, z) {
+        var i = accNext;
+        accNext = (accNext + 1) % ACC_N;
+        accPos[i * 3] = x; accPos[i * 3 + 1] = y; accPos[i * 3 + 2] = z;
+        accBirth[i] = perfNow;
+        accLife[i] = 24 + Math.random() * 18;
+        accSize[i] = 0.24 + Math.random() * 0.24;
+        accGeo.attributes.position.needsUpdate = true;
+        accGeo.attributes.aBirth.needsUpdate = true;
+        accGeo.attributes.aLife.needsUpdate = true;
+        accGeo.attributes.aSize.needsUpdate = true;
+      }
+
+      /* ---- falling snow, near layer: real flakes, not dots ----
+         Crystal-textured points in two depth layers: far flakes
+         small and slow, near flakes large enough to read as
+         six-armed crystals, turning as they fall. A slow wind field
+         veers and gusts (gusts shear the whole curtain diagonally);
+         flakes still land on the same surfaces and feed the same
+         accumulation pool. Finger swipes stir this layer into a
+         vortex, taps kick up a puff, pinching thickens the storm. */
+      function flakeTexture() {
+        var c = document.createElement('canvas'); c.width = c.height = 128;
+        var x = c.getContext('2d');
+        x.translate(64, 64);
+        var grd = x.createRadialGradient(0, 0, 0, 0, 0, 60);
+        grd.addColorStop(0, 'rgba(255,255,255,0.5)');
+        grd.addColorStop(1, 'rgba(255,255,255,0)');
+        x.fillStyle = grd; x.fillRect(-64, -64, 128, 128);
+        x.strokeStyle = 'rgba(255,255,255,0.95)';
+        x.lineCap = 'round';
+        for (var k = 0; k < 6; k++) {
+          x.save(); x.rotate(k * Math.PI / 3);
+          x.lineWidth = 4; x.beginPath(); x.moveTo(0, 0); x.lineTo(0, -52); x.stroke();
+          x.lineWidth = 3;
+          [0.45, 0.72].forEach(function (f) {
+            var by = -52 * f, bl = 16 * (1 - f * 0.55);
+            x.beginPath(); x.moveTo(0, by); x.lineTo(-bl * 0.6, by - bl); x.stroke();
+            x.beginPath(); x.moveTo(0, by); x.lineTo(bl * 0.6, by - bl); x.stroke();
+          });
+          x.restore();
+        }
+        x.fillStyle = 'rgba(255,255,255,0.9)';
+        x.beginPath(); x.arc(0, 0, 5, 0, Math.PI * 2); x.fill();
+        return new THREE.CanvasTexture(c);
+      }
+      var snowFallMat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uPR: { value: DPR }, uTex: { value: flakeTexture() }, uOpacity: { value: 0.96 } },
+        vertexShader: [
+          'attribute float aSize;',
+          'attribute float aPhase;',
+          'uniform float uPR;',
+          'varying float vPh;',
+          'varying float vFade;',
+          'void main(){',
+          '  vPh = aPhase;',
+          '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+          '  float dist = max(1.0, -mv.z);',
+          '  gl_PointSize = clamp(aSize * uPR * (150.0 / dist), 1.5, 120.0 * uPR);',
+          '  vFade = smoothstep(2.5, 7.0, dist) * (1.0 - 0.35 * smoothstep(34.0, 55.0, dist));',
+          '  gl_Position = projectionMatrix * mv;',
+          '}'
+        ].join('\n'),
+        fragmentShader: [
+          'uniform sampler2D uTex;',
+          'uniform float uTime;',
+          'uniform float uOpacity;',
+          'varying float vPh;',
+          'varying float vFade;',
+          'void main(){',
+          '  float shape = fract(vPh * 3.77);',
+          '  float ang = vPh * 6.2831 + uTime * (fract(vPh * 7.31) - 0.5) * 1.4;',
+          '  vec2 uv = gl_PointCoord - 0.5;',
+          '  float ca = cos(ang), sa = sin(ang);',
+          '  uv = mat2(ca, -sa, sa, ca) * uv + 0.5;',
+          '  vec4 tex = texture2D(uTex, uv);',
+          '  float dotA = smoothstep(0.5, 0.06, length(gl_PointCoord - 0.5));',
+          '  float a = shape > 0.62 ? dotA : tex.a;',
+          '  vec3 col = vec3(0.93, 0.96, 1.0) * (shape > 0.62 ? 0.95 : 1.05);',
+          '  gl_FragColor = vec4(col, a * uOpacity * vFade);',
+          '}'
+        ].join('\n'),
+        depthWrite: false,
+        transparent: true
+      });
+      animatedMats.push(snowFallMat);
+      var FALL_N = 900;
+      var fallGeo = new THREE.BufferGeometry();
+      var fallPos = new Float32Array(FALL_N * 3);
+      var fallSize = new Float32Array(FALL_N);
+      var fallPhase = new Float32Array(FALL_N);
+      var fallData = [];
+      function spawnFlake(i, randomY) {
+        var near = Math.random() < 0.42;
+        var a = Math.random() * Math.PI * 2;
+        var rr = near ? Math.sqrt(Math.random()) * 9.5 : 8 + Math.sqrt(Math.random()) * 7.5;
+        fallPos[i * 3] = Math.cos(a) * rr;
+        fallPos[i * 3 + 1] = randomY ? Math.random() * 13 : 11 + Math.random() * 3;
+        fallPos[i * 3 + 2] = Math.sin(a) * rr;
+        fallSize[i] = near ? 0.42 + Math.random() * 0.5 : 0.16 + Math.random() * 0.2;
+        fallData[i] = {
+          sp: near ? 0.95 + Math.random() * 0.75 : 0.55 + Math.random() * 0.5,
+          ph: fallPhase[i], sw: 0.25 + Math.random() * 0.45,
+          vx: 0, vy: 0, vz: 0, near: near
+        };
+      }
+      for (var fi2 = 0; fi2 < FALL_N; fi2++) { fallPhase[fi2] = Math.random() * Math.PI * 2; spawnFlake(fi2, true); }
+      fallGeo.setAttribute('position', new THREE.BufferAttribute(fallPos, 3));
+      fallGeo.setAttribute('aSize', new THREE.BufferAttribute(fallSize, 1));
+      fallGeo.setAttribute('aPhase', new THREE.BufferAttribute(fallPhase, 1));
+      var fallPts = new THREE.Points(fallGeo, snowFallMat);
+      fallPts.frustumCulled = false;
+      fallPts.renderOrder = 5;
+      scene.add(fallPts);
+
+      /* wind field + snow-interaction state (handlers live below) */
+      var windState = { x: 0.3, z: 0.1, gust: 0 };
+      var pinchSnow = 0, pinchSnowTarget = 0;
+      var stir = { x: 0, y: -99, z: 0, vx: 0, vz: 0, power: 0, t: -10 };
+      function updateWind(now) {
+        var ang = Math.sin(now * 0.07) * 0.9 + Math.sin(now * 0.023 + 1.7) * 0.7;
+        var g = Math.sin(now * 0.21 + 1.3) * 0.6 + Math.sin(now * 0.083) * 0.55;
+        windState.gust = Math.pow(Math.max(0, g), 2.0);
+        var mag = 0.22 + windState.gust * 1.35 + pinchSnow * 0.7;
+        windState.x = Math.cos(ang) * mag;
+        windState.z = Math.sin(ang) * mag;
+      }
+      function puffSnow(px, py, pz) {
+        for (var i = 0; i < FALL_N; i++) {
+          var d = fallData[i], i3 = i * 3;
+          var dx = fallPos[i3] - px, dy = fallPos[i3 + 1] - py, dz = fallPos[i3 + 2] - pz;
+          var dd = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dd < 2.6) {
+            var f = 1 - dd / 2.6;
+            d.vy += (1.9 + Math.random() * 1.5) * f;
+            d.vx += (dx / (dd + 0.3)) * 1.1 * f;
+            d.vz += (dz / (dd + 0.3)) * 1.1 * f;
+          }
+        }
+      }
+      function updateFallingSnow(dt, now) {
+        updateWind(now);
+        var speedMul = 1 + windState.gust * 0.18 + pinchSnow * 0.35;
+        var arr = fallPos;
+        var stirAge = now - stir.t;
+        for (var i = 0; i < FALL_N; i++) {
+          var d = fallData[i], i3 = i * 3;
+          var x = arr[i3], y = arr[i3 + 1], z = arr[i3 + 2];
+          // stir vortex: flakes near the fingertip swirl around it
+          // and are dragged along; the impulse then decays and the
+          // curtain settles back on its own
+          if (stirAge < 0.15 && stir.power > 0.01) {
+            var sx2 = x - stir.x, sy2 = y - stir.y, sz2 = z - stir.z;
+            var sd2 = sx2 * sx2 + sy2 * sy2 + sz2 * sz2;
+            if (sd2 < 20.0) {
+              var sd = Math.sqrt(sd2) || 0.001;
+              var sf = (1 - sd / 4.5) * stir.power * dt * 9;
+              d.vx += ((-sz2 / sd) * 2.1 + (sx2 / sd) * 0.7 + stir.vx * 0.45) * sf;
+              d.vz += ((sx2 / sd) * 2.1 + (sz2 / sd) * 0.7 + stir.vz * 0.45) * sf;
+              d.vy += 0.55 * sf;
+            }
+          }
+          var vdec = Math.pow(0.22, dt);
+          d.vx *= vdec; d.vz *= vdec;
+          if (d.vy > 0) d.vy -= 2.8 * dt; else d.vy *= vdec;   // puff rises, turns, falls back
+          var vl = Math.sqrt(d.vx * d.vx + d.vz * d.vz);
+          if (vl > 3.5) { d.vx *= 3.5 / vl; d.vz *= 3.5 / vl; }
+          var wmul = d.near ? 0.55 : 1.0;   // far layer rides the wind further
+          y += (d.vy - d.sp * speedMul) * dt;
+          x += (Math.sin(now * 0.9 + d.ph) * d.sw + windState.x * wmul + d.vx) * dt;
+          z += (Math.cos(now * 0.7 + d.ph * 1.3) * d.sw * 0.6 + windState.z * wmul + d.vz) * dt;
+          var landed = false, ly = 0, p, b, dx, dz;
+          var r = Math.sqrt(x * x + z * z);
+          if (r < 3.55) {
+            var sy = treeSurfaceY(r);
+            if (sy > 0 && y <= sy) { landed = true; ly = sy; }
+          }
+          if (!landed) {
+            for (p = 0; p < snowTargets.flats.length; p++) {
+              var ft = snowTargets.flats[p];
+              dx = x - ft.x; dz = z - ft.z;
+              if (dx * dx + dz * dz < ft.r * ft.r && y <= ft.y) { landed = true; ly = ft.y; break; }
+            }
+          }
+          if (!landed) {
+            for (b = 0; b < snowTargets.benches.length; b++) {
+              var bt = snowTargets.benches[b];
+              var ox = x - bt.x, oz = z - bt.z;
+              var cs = Math.cos(bt.ry), sn = Math.sin(bt.ry);
+              var lx = ox * cs - oz * sn, lz = ox * sn + oz * cs;
+              if (Math.abs(lx) < 1.32) {
+                if (Math.abs(lz) < 0.34 && y <= bt.seatY) { landed = true; ly = bt.seatY; break; }
+                if (Math.abs(lz - bt.backZ) < 0.12 && y <= bt.backY) { landed = true; ly = bt.backY; break; }
+              }
+            }
+          }
+          if (landed) {
+            addAccum(x, ly + 0.02, z);
+            spawnFlake(i, false);
+          } else if (y <= 0.03) {
+            if (Math.random() < 0.4) addAccum(x, 0.045, z);   // snow builds on the ground too
+            spawnFlake(i, false);
+          } else if (x * x + z * z > 460 || y < -1) {
+            spawnFlake(i, false);   // blown out of the plaza: recycle upwind
+          } else {
+            arr[i3] = x; arr[i3 + 1] = y; arr[i3 + 2] = z;
+          }
+        }
+        fallGeo.attributes.position.needsUpdate = true;
+        fallGeo.attributes.aSize.needsUpdate = true;
+      }
+
+      /* ---------------- moon glow ---------------- */
+      var moon = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: softTex, color: 0xd6e4ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.16
+      }));
+      moon.position.set(13, 12.5, -18);
+      moon.scale.set(4.4, 4.4, 1);
+      scene.add(moon);
+
+      /* ================================================================
+         LYRICS — borrowed from the shared pool, never a separate system.
+         Each line forms at a different scenic anchor (shuffle bag, no
+         repeat within a round, neighbours never share an anchor); the
+         camera glides after the particle swarm; when the particles fly
+         home the camera settles back to the idle wide view.
+         state machine: gather -> hold -> return home -> gap -> next
+         ================================================================ */
+      var cueName = null, lyricEnv = 0;   // per-anchor cue state, driven by updateLyrics
+      var LINES = [
+        '雪落下的声音',
+        '星尘落满小镇',
+        '愿你被这世界温柔以待',
+        '灯火里藏着冬天的心事',
+        '风把祝福吹向远方'
+      ];
+      // Anchor list (world space; framing recomputed per aspect each line).
+      // Every anchor sits in the plaza's open airspace — within ~5.7
+      // units of the tree axis, 3.1–9.3 up — and every follow camera
+      // rides high enough that its sightline to the glyph clears the
+      // house ring (tallest ridge 6.6) with room to spare. Scenery
+      // reads as the backdrop BEHIND the line, never as an occluder
+      // in front of it: no roof, tower, pine or stall roof can cross
+      // the glyph plane. (The retired 'house' anchor sat inside the
+      // cabin's roof volume and the old 'field' anchor put the inn
+      // between camera and text — that is the hidden-lyric bug.)
+      //  star = beside the treetop star, sky backdrop, star answers ·
+      //  crown = upper tree flank · plaza = low over the stone rings,
+      //  tree behind · lamp = beside the street lamp, lamp answers ·
+      //  west = west flank, inn and pines as backdrop, hardest wind ·
+      //  field = high north-east, rooftops far below as backdrop
+      var ANCHORS = [
+        { name: 'star',  p: [2.0, 9.3, 0.8],   radius: 13.0, phi: 1.05, scale: 0.95, cue: 'star', wind: [0.7, 0.15, -0.4], windAmt: 0.8,  ribbonAmp: 0.16 },
+        { name: 'crown', p: [-3.4, 6.4, 2.2],  radius: 11.5, phi: 1.10, scale: 0.90, cue: null,   wind: [0.85, 0.2, 0.3],  windAmt: 0.9,  ribbonAmp: 0.06 },
+        { name: 'plaza', p: [0.6, 3.1, 4.6],   radius: 11.0, phi: 1.16, scale: 0.90, cue: null,   wind: [0.9, 0.1, 0.45],  windAmt: 1.0,  ribbonAmp: 0.05 },
+        { name: 'lamp',  p: [4.6, 3.6, 3.4],   radius: 10.5, phi: 1.14, scale: 0.90, cue: 'lamp', wind: [0.8, 0.2, 0.5],   windAmt: 0.9,  ribbonAmp: 0.06 },
+        { name: 'west',  p: [-4.8, 5.4, -1.2], radius: 12.0, phi: 1.12, scale: 1.00, cue: null,   wind: [1.0, 0.25, 0.2],  windAmt: 1.25, ribbonAmp: 0.07 },
+        { name: 'field', p: [3.4, 7.6, -3.0],  radius: 12.5, phi: 1.08, scale: 1.00, cue: null,   wind: [0.75, 0.3, -0.5], windAmt: 1.1,  ribbonAmp: 0.10 }
+      ];
+      var anchorBag = [], lastAnchor = -1;
+      function nextAnchor() {
+        var forcedA = Q.get('anchor');
+        if (forcedA !== null) {
+          var fai = parseInt(forcedA, 10);
+          if (fai >= 0 && fai < ANCHORS.length) { lastAnchor = fai; return ANCHORS[fai]; }
+        }
+        if (!anchorBag.length) {
+          anchorBag = shuffledIndices(ANCHORS.length);
+          if (anchorBag[anchorBag.length - 1] === lastAnchor && anchorBag.length > 1) {
+            var t = anchorBag[anchorBag.length - 1];
+            anchorBag[anchorBag.length - 1] = anchorBag[0];
+            anchorBag[0] = t;
+          }
+        }
+        lastAnchor = anchorBag.pop();
+        return ANCHORS[lastAnchor];
+      }
+      // Resolve an anchor for the current aspect: portrait pulls anchors
+      // toward the axis and pushes the follow camera back (pan + push-in),
+      // landscape keeps the wide orbit framing.
+      function resolveAnchor(a) {
+        var asp = window.innerWidth / window.innerHeight;
+        var px = a.p[0], py = a.p[1], pz = a.p[2];
+        var radius = a.radius;
+        if (asp < 1) { px *= 0.82; pz *= 0.9; radius *= 1.22; }
+        else if (asp < 1.4) { radius *= 1.08; }
+        return {
+          pos: new THREE.Vector3(px, py, pz),
+          theta: Math.atan2(px, pz) + 0.3,
+          phi: a.phi,
+          radius: radius,
+          scale: a.scale,
+          name: a.name,
+          cue: a.cue,
+          wind: a.wind,
+          windAmt: a.windAmt,
+          ribbonAmp: a.ribbonAmp
+        };
+      }
+
+      var LYR_MAX = 2300;
+      var sampleCanvas = document.createElement('canvas');
+
+      // Sample a line into glyph-local targets: [{x, y, z, ch}]
+      function sampleGlyph(text, gScale) {
+        var W = 1400, H = 200;
+        sampleCanvas.width = W; sampleCanvas.height = H;
+        var x = sampleCanvas.getContext('2d');
+        x.clearRect(0, 0, W, H);
+        x.fillStyle = '#fff';
+        x.textAlign = 'center'; x.textBaseline = 'middle';
+        var fs = text.length > 8 ? 108 : 128;
+        x.font = '600 ' + fs + 'px "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif';
+        x.fillText(text, W / 2, H / 2 + 6);
+        var img = x.getImageData(0, 0, W, H).data;
+        var pts = [];
+        var step = 3;
+        for (var yy = 0; yy < H; yy += step) {
+          for (var xx = 0; xx < W; xx += step) {
+            if (img[(yy * W + xx) * 4 + 3] > 110) pts.push([xx, yy]);
+          }
+        }
+        if (pts.length > LYR_MAX) {
+          var keep = [];
+          var stride = pts.length / LYR_MAX;
+          for (var i = 0; i < LYR_MAX; i++) keep.push(pts[Math.floor(i * stride)]);
+          pts = keep;
+        }
+        var worldW = Math.min(9.2, 4.4 + text.length * 0.62) * gScale;
+        var asp = window.innerWidth / window.innerHeight;
+        if (asp < 1) worldW *= (0.7 + 0.3 * asp);   // keep the whole line inside a portrait frame
+        var worldH = worldW * (H / W);
+        var charW = W / text.length;
+        var out = [];
+        for (var j = 0; j < pts.length; j++) {
+          out.push({
+            x: (pts[j][0] / W - 0.5) * worldW,
+            y: (0.5 - pts[j][1] / H) * worldH,
+            z: (Math.random() - 0.5) * 0.06,
+            ch: Math.min(text.length - 1, Math.floor(pts[j][0] / charW))
+          });
+        }
+        out.worldW = worldW;
+        out.worldH = worldH;
+        return out;
+      }
+
+      /* ---- glyph backdrop: dark ellipse + warm rim glow, per anchor ---- */
+      function darkEllipseTexture() {
+        var c = document.createElement('canvas'); c.width = 256; c.height = 128;
+        var x = c.getContext('2d');
+        var g = x.createRadialGradient(128, 64, 4, 128, 64, 120);
+        g.addColorStop(0, 'rgba(3,6,14,0.88)');
+        g.addColorStop(0.62, 'rgba(3,6,14,0.55)');
+        g.addColorStop(1, 'rgba(3,6,14,0)');
+        x.save();
+        x.translate(128, 64); x.scale(1, 0.5); x.translate(-128, -64);
+        x.fillStyle = g; x.fillRect(0, -64, 256, 256);
+        x.restore();
+        return new THREE.CanvasTexture(c);
+      }
+      var glyphGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: softTex, color: 0xffca7a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0
+      }));
+      glyphGlow.renderOrder = 1;
+      scene.add(glyphGlow);
+      var glyphShade = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: darkEllipseTexture(), depthWrite: false, transparent: true, opacity: 0
+      }));
+      glyphShade.renderOrder = 2;
+      scene.add(glyphShade);
+
+      // Assign glyph targets to pool particles: the whole line is
+      // borrowed from the particle tree itself. Borrowed slots
+      // visibly thin out on the tree; returning refills them.
+      var curAnchor = null, curGlyphW = 9, curGlyphH = 1.3;
+      function assignLine(text) {
+        var anchor = resolveAnchor(nextAnchor());
+        curAnchor = anchor;
+        // this line's presentation design: exit wind + ribbon
+        // undulation + which scenic cue (if any) answers the line
+        cueName = anchor.cue;
+        sharedU.uWindDir.value.set(anchor.wind[0], anchor.wind[1], anchor.wind[2]).normalize();
+        sharedU.uWindAmt.value = anchor.windAmt;
+        sharedU.uRibbonAmp.value = anchor.ribbonAmp;
+        var glyph = sampleGlyph(text, anchor.scale);
+        curGlyphW = glyph.worldW; curGlyphH = glyph.worldH;
+
+        // aim the follow camera at this anchor (shortest arc from here)
+        var dTh = anchor.theta - rig.tTheta;
+        dTh = Math.atan2(Math.sin(dTh), Math.cos(dTh));
+        follow.dTheta = dTh;
+        follow.phi = anchor.phi;
+        follow.radius = anchor.radius;
+        follow.focus.copy(anchor.pos);
+        follow.focus.y = Math.min(anchor.pos.y, 8.6);
+        follow.allowed = true;
+        follow.goal = 1;
+
+        glyphGlow.position.copy(anchor.pos);
+        glyphGlow.scale.set(curGlyphW * 1.4, curGlyphH * 3.4, 1);
+        glyphShade.position.copy(anchor.pos);
+        glyphShade.scale.set(curGlyphW * 1.24, curGlyphH * 2.7, 1);
+
+        var cand = [];
+        var oi = shuffledIndices(orbit.userData.count);
+        for (var a = 0; a < oi.length; a++) cand.push([orbit, oi[a]]);
+
+        POOL.forEach(function (sys) {
+          var on = sys.geometry.attributes.aLyrOn.array;
+          for (var i = 0; i < on.length; i++) on[i] = 0;
+        });
+        var n = Math.min(glyph.length, cand.length);
+        for (var k = 0; k < n; k++) {
+          var sys = cand[k][0], idx = cand[k][1], gp = glyph[k];
+          var ga = sys.geometry.attributes;
+          ga.aLyr.array[idx * 3] = gp.x;
+          ga.aLyr.array[idx * 3 + 1] = gp.y;
+          ga.aLyr.array[idx * 3 + 2] = gp.z;
+          ga.aLyrOn.array[idx] = 1;
+          ga.aDelay.array[idx] = (text.length > 1 ? gp.ch / (text.length - 1) : 0) * 0.75 + Math.random() * 0.25;
+          ga.aChar.array[idx] = gp.ch;
+        }
+        // stardust ribbon: two fine dust bands framing the line,
+        // borrowed from the same pool and marked aChar = -1 — they
+        // arrive early, undulate gently while the line is held,
+        // and fly home with everyone else
+        var ribN = Math.min(150, cand.length - n);
+        for (var rk = 0; rk < ribN; rk++) {
+          var rsys = cand[n + rk][0], ridx = cand[n + rk][1];
+          var rTop = rk % 2 === 0;
+          var rga = rsys.geometry.attributes;
+          rga.aLyr.array[ridx * 3] = (rk / ribN - 0.5) * curGlyphW * 1.16;
+          rga.aLyr.array[ridx * 3 + 1] = (rTop ? 1 : -1) * (curGlyphH * 0.85 + 0.12) + (Math.random() - 0.5) * 0.14;
+          rga.aLyr.array[ridx * 3 + 2] = (Math.random() - 0.5) * 0.1;
+          rga.aLyrOn.array[ridx] = 1;
+          rga.aDelay.array[ridx] = Math.random() * 0.4;
+          rga.aChar.array[ridx] = -1;
+        }
+        POOL.forEach(function (sys) {
+          var ga = sys.geometry.attributes;
+          ga.aLyr.needsUpdate = true;
+          ga.aLyrOn.needsUpdate = true;
+          ga.aDelay.needsUpdate = true;
+          ga.aChar.needsUpdate = true;
+        });
+        return text.length;
+      }
+
+      var GATHER = 2.3, HOLD_T = 3.0, RETURN_T = 1.7, GAP_T = 0.5;
+      var LINE_TOTAL = GATHER + HOLD_T + RETURN_T + GAP_T;
+      var lineIdx = 0, lineStart = null, curLineLen = 1;
+      var forcedL = parseInt(Q.get('line') || '0', 10);
+      if (forcedL >= 0 && forcedL < LINES.length) lineIdx = forcedL;
+      curLineLen = assignLine(LINES[lineIdx]);
+
+      function updateLyrics(now) {
+        if (lineStart === null) lineStart = STILL ? now - (GATHER + 1.2) : now;
+        var t = now - lineStart;
+        if (t >= LINE_TOTAL) {
+          lineIdx = (lineIdx + 1) % LINES.length;
+          curLineLen = assignLine(LINES[lineIdx]);   // safe: morph is 0, everyone is home
+          lineStart = now;
+          t = 0;
+        }
+        var shade = 0;
+        if (t < GATHER) {
+          sharedU.uFly.value = t / GATHER;
+          sharedU.uReturn.value = 0;
+          sharedU.uCharLit.value = (t / GATHER) * (curLineLen + 0.6);
+          follow.goal = 1;
+          shade = 0.52 * (t / GATHER);
+        } else if (t < GATHER + HOLD_T) {
+          sharedU.uFly.value = 1;
+          sharedU.uReturn.value = 0;
+          sharedU.uCharLit.value = curLineLen + 1;
+          follow.goal = 1;
+          shade = 0.52;
+        } else if (t < GATHER + HOLD_T + RETURN_T) {
+          sharedU.uFly.value = 1;
+          sharedU.uReturn.value = (t - GATHER - HOLD_T) / RETURN_T;
+          follow.goal = 0;   // particles fly home, camera drifts back wide
+          shade = 0.52 * (1 - (t - GATHER - HOLD_T) / RETURN_T);
+        } else {
+          sharedU.uFly.value = 0;
+          sharedU.uReturn.value = 0;
+          follow.goal = 0;
+          shade = 0;
+        }
+        glyphShade.material.opacity = shade;
+        glyphGlow.material.opacity = shade * 0.32;
+        sharedU.uBreath.value = shade / 0.52;
+        lyricEnv = shade / 0.52;
+        // glyph sits at this line's anchor and turns to face the camera
+        if (curAnchor) {
+          sharedU.uLyrPos.value.copy(curAnchor.pos);
+          var yaw = Math.atan2(camera.position.x - curAnchor.pos.x, camera.position.z - curAnchor.pos.z);
+          sharedU.uLyrCos.value = Math.cos(yaw);
+          sharedU.uLyrSin.value = Math.sin(yaw);
+        }
+      }
+
+      /* ---------------- interaction: drag orbit / pinch spread / tap ripple ---------------- */
+      var dragging = false, pinching = false, userZoomed = false;
+      var pointers = new Map();
+      var lastX = 0, lastY = 0, lastMoveT = 0;
+      var pinchDist = 0, spreadTarget = 0, spreadCur = 0;
+      var downT = 0, downX = 0, downY = 0, movedPx = 0;
+
+      var rippleStart = -10;
+      var raycaster = new THREE.Raycaster();
+      var rippleSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(3.6, 12, 12),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      rippleSphere.position.set(0, 4.2, 0);
+      scene.add(rippleSphere);
+
+      function setSpreadMats(v) {
+        orbit.material.uniforms.uSpread.value = v * 1.7;
+      }
+
+      stage.addEventListener('pointerdown', function (e) {
+        stage.setPointerCapture(e.pointerId);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        rig.lastTouch = performance.now() / 1000;
+        follow.allowed = false;   // the user's hand outranks the follow camera
+        if (pointers.size === 1) {
+          dragging = true; pinching = false;
+          lastX = e.clientX; lastY = e.clientY;
+          downT = performance.now(); downX = e.clientX; downY = e.clientY; movedPx = 0;
+          rig.velTheta = 0; rig.velPhi = 0;
+        } else if (pointers.size === 2) {
+          pinching = true; dragging = false;
+          var arr = Array.from(pointers.values());
+          pinchDist = Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y);
+        }
+      });
+
+      stage.addEventListener('pointermove', function (e) {
+        if (!pointers.has(e.pointerId)) return;
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        rig.lastTouch = performance.now() / 1000;
+        if (pinching && pointers.size === 2) {
+          var arr = Array.from(pointers.values());
+          var nd = Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y);
+          var delta = nd - pinchDist;
+          if (Math.abs(delta) > 0.4) spreadTarget = 0.6;   // galaxy-like bloom while pulling
+          pinchSnowTarget = 1;   // the storm thickens while pulling
+          userZoomed = true;
+          rig.tRadius = Math.max(8.5, Math.min(26, rig.tRadius - delta * 0.03));
+          pinchDist = nd;
+        } else if (dragging) {
+          var dx = e.clientX - lastX, dy = e.clientY - lastY;
+          movedPx += Math.abs(dx) + Math.abs(dy);
+          var now = performance.now();
+          var dt = Math.max(1, now - lastMoveT) / 1000;
+          lastMoveT = now;
+          rig.tTheta -= dx * 0.0052;
+          rig.tPhi = Math.max(0.92, Math.min(1.58, rig.tPhi - dy * 0.0032));
+          rig.velTheta = -dx * 0.0052 / dt * 0.016;
+          rig.velPhi = -dy * 0.0032 / dt * 0.016;
+          // the swipe also stirs the snow curtain — an extra
+          // response layered over the orbit drag, snow layer only
+          var spdPx = Math.hypot(dx, dy);
+          if (spdPx > 2) {
+            var ndcS = new THREE.Vector2(
+              (e.clientX / window.innerWidth) * 2 - 1,
+              -(e.clientY / window.innerHeight) * 2 + 1
+            );
+            raycaster.setFromCamera(ndcS, camera);
+            var ctrS = new THREE.Vector3(0, 4.5, 0);
+            var ttS = raycaster.ray.direction.dot(ctrS.sub(raycaster.ray.origin));
+            var spt = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(Math.max(2, ttS)));
+            stir.vx = (spt.x - stir.x) * 2.2;
+            stir.vz = (spt.z - stir.z) * 2.2;
+            stir.x = spt.x; stir.y = spt.y; stir.z = spt.z;
+            stir.power = Math.min(1, spdPx * 0.05);
+            stir.t = perfNow;
+          }
+          lastX = e.clientX; lastY = e.clientY;
+        }
+      });
+
+      function endPointer(e) {
+        var wasTap = dragging && pointers.size === 1 &&
+          performance.now() - downT < 260 && movedPx < 8;
+        pointers.delete(e.pointerId);
+        if (pointers.size < 2) { pinching = false; spreadTarget = 0; pinchSnowTarget = 0; }
+        if (pointers.size === 0) dragging = false;
+        if (wasTap) {
+          var ndc = new THREE.Vector2(
+            (e.clientX / window.innerWidth) * 2 - 1,
+            -(e.clientY / window.innerHeight) * 2 + 1
+          );
+          raycaster.setFromCamera(ndc, camera);
+          var hit = raycaster.intersectObject(rippleSphere);
+          var pt;
+          if (hit.length) {
+            pt = hit[0].point;
+          } else {
+            // fall back: point on the plane through the tree at tap depth
+            var ray = raycaster.ray;
+            var tt = -ray.origin.z / ray.direction.z;
+            if (tt > 0) pt = ray.origin.clone().add(ray.direction.clone().multiplyScalar(tt));
+          }
+          if (pt && Math.abs(pt.x) < 6 && pt.y > -1 && pt.y < 11) {
+            rippleStart = perfNow;
+            orbit.material.uniforms.uRipplePos.value.copy(pt);
+          }
+          // the same tap kicks up a small puff of snow around the
+          // touch point: flakes leap up, turn, and settle back down
+          var ctrP = new THREE.Vector3(0, 4.5, 0);
+          var ttP = raycaster.ray.direction.dot(ctrP.sub(raycaster.ray.origin));
+          var ppt = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(Math.max(2, ttP)));
+          puffSnow(ppt.x, Math.min(9, Math.max(0.5, ppt.y)), ppt.z);
+        }
+      }
+      stage.addEventListener('pointerup', endPointer);
+      stage.addEventListener('pointercancel', endPointer);
+
+      stage.addEventListener('wheel', function (e) {
+        e.preventDefault();
+        userZoomed = true;
+        rig.tRadius = Math.max(8.5, Math.min(26, rig.tRadius + e.deltaY * 0.012));
+        spreadTarget = 0.45;
+        setTimeout(function () { if (!pinching) spreadTarget = 0; }, 160);
+        rig.lastTouch = performance.now() / 1000;
+      }, { passive: false });
+
+      /* ---------------- resize ---------------- */
+      function onResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.fov = defaultView().fov;   // framing band follows the viewport shape
+        camera.updateProjectionMatrix();
+        if (!userZoomed) rig.tRadius = defaultRadius();   // rotation reframes the whole tree
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+        DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+        renderer.setPixelRatio(DPR);
+        animatedMats.forEach(function (m) { m.uniforms.uPR.value = DPR; });
+      }
+      window.addEventListener('resize', onResize);
+      window.addEventListener('orientationchange', function () { setTimeout(onResize, 60); });
+
+      /* ---------------- readiness + measured frame stats ---------------- */
+      var frameCount = 0;
+      var statsDone = false;
+      function computeStats() {
+        try {
+          var gl = renderer.getContext();
+          var w = renderer.domElement.width, h = renderer.domElement.height;
+          var buf = new Uint8Array(w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+          var nonBlack = 0, total = 0, sum = 0;
+          for (var i = 0; i < buf.length; i += 16) {
+            var luma = (0.2126 * buf[i] + 0.7152 * buf[i + 1] + 0.0722 * buf[i + 2]) / 255;
+            sum += luma; total++;
+            if (luma > 0.02) nonBlack++;
+          }
+          var stats = {
+            nonBlackRatio: +(nonBlack / total).toFixed(3),
+            meanLuma: +(sum / total).toFixed(3),
+            drawCalls: renderer.info.render.calls,
+            triangles: renderer.info.render.triangles
+          };
+          window.__stats = stats;
+          var el = document.getElementById('stats');
+          if (el) el.textContent = '实时 3D 渲染 · 非黑像素 ' + (stats.nonBlackRatio * 100).toFixed(1) + '% · 平均亮度 ' + stats.meanLuma.toFixed(3) + ' · draw call ' + stats.drawCalls + ' · 三角面 ' + (stats.triangles / 1000).toFixed(1) + 'k';
+        } catch (e) { /* stats are diagnostic only */ }
+      }
+
+      /* ---------------- main loop ---------------- */
+      var clock = new THREE.Clock();
+      var perfNow = 0;
+      function animate() {
+        if (STILL && townReady && frameCount >= 40) return;   // fixed frame: settle with the town in, then stop
+        requestAnimationFrame(animate);
+        var dt = Math.min(0.05, clock.getDelta());
+        perfNow = clock.elapsedTime;
+        if (STILL) { perfNow = 4.2; dt = 0; }   // fixed-moment frame for capture
+
+        for (var i = 0; i < animatedMats.length; i++) animatedMats[i].uniforms.uTime.value = perfNow;
+
+        // ripple clock
+        var rt = perfNow - rippleStart;
+        var rv = rt >= 0 && rt < 2.2 ? rt : -1;
+        orbit.material.uniforms.uRippleT.value = rv;
+
+        // spread spring: bloom while pulling, settle back after release
+        spreadCur += (spreadTarget - spreadCur) * (1 - Math.pow(0.001, dt));
+        if (!pinching && spreadTarget > 0 && spreadCur > 0.4) spreadTarget = 0;
+        setSpreadMats(spreadCur);
+
+        starSprite.material.opacity = 0.82 + 0.18 * Math.sin(perfNow * 1.6);
+        var ss = 2.9 + 0.26 * Math.sin(perfNow * 1.6);
+        starSprite.scale.set(ss, ss, 1);
+        // star cue: while a line is held beside the treetop star,
+        // the star's halo swells in answer (glyph legibility first —
+        // the shade behind the text is untouched)
+        var starCue = cueName === 'star' ? lyricEnv : 0;
+        starGlow.material.opacity = 0.85 * (1 + 0.55 * starCue);
+        var sgs = 5.6 * (1 + 0.18 * starCue);
+        starGlow.scale.set(sgs, sgs, 1);
+
+        // chimney smoke: puffs rise, swell, drift with the wind, dissolve
+        for (var smi = 0; smi < smokeSprites.length; smi++) {
+          var pf = smokeSprites[smi];
+          var sph = (perfNow * 0.09 + pf.userData.ph) % 1;
+          pf.position.y = pf.userData.baseY + sph * 2.3;
+          pf.position.x = pf.userData.baseX + sph * sph * 1.1 + Math.sin(perfNow * 0.5 + pf.userData.ph * 9.0) * 0.08;
+          var psc = 0.5 + sph * 1.5;
+          pf.scale.set(psc, psc, 1);
+          pf.material.opacity = Math.sin(sph * Math.PI) * 0.16;
+        }
+        treePool.material.opacity = 0.85 + 0.15 * Math.sin(perfNow * 0.9);
+
+        // window glass breathes, lamp light flickers — slow, asynchronous
+        for (var dmi = 0; dmi < dynMats.length; dmi++) {
+          var dmo = dynMats[dmi];
+          dmo.mat.emissiveIntensity = dmo.base * (1 + 0.05 * Math.sin(perfNow * dmo.sp + dmo.ph));
+        }
+        // lamp cue: the street lamp nearest a lamp-side line
+        // brightens in gentle answer while the line is held
+        for (var dci = 0; dci < dynLights.length; dci++) dynLights[dci].cue = 0;
+        if (cueName === 'lamp' && lyricEnv > 0.02 && curAnchor) {
+          var cueBest = null, cueBd = 1e9;
+          for (var dqi = 0; dqi < dynLights.length; dqi++) {
+            var dqx = dynLights[dqi].x - curAnchor.pos.x, dqz = dynLights[dqi].z - curAnchor.pos.z;
+            var dqd = dqx * dqx + dqz * dqz;
+            if (dqd < cueBd) { cueBd = dqd; cueBest = dynLights[dqi]; }
+          }
+          if (cueBest) cueBest.cue = lyricEnv;
+        }
+        for (var dli = 0; dli < dynLights.length; dli++) {
+          var dlo = dynLights[dli];
+          dlo.light.intensity = dlo.base * (1 + 0.05 * Math.sin(perfNow * 13.7 + dlo.ph) * Math.sin(perfNow * 3.1 + dlo.ph) + 0.03 * Math.sin(perfNow * 1.3 + dlo.ph))
+            * (1 + 0.45 * (dlo.cue || 0) * (0.75 + 0.25 * Math.sin(perfNow * 7 + dlo.ph)));
+        }
+
+        updateFallingSnow(dt, perfNow);
+        pinchSnow += (pinchSnowTarget - pinchSnow) * (1 - Math.pow(0.02, dt));
+        snow.material.uniforms.uGust.value = windState.gust * 0.85 + pinchSnow * 0.7;
+        applyCamera(dt);
+        updateLyrics(perfNow);
+        renderer.info.reset();
+        composer.render();
+        frameCount++;
+        if (townReady && !statsDone && frameCount >= 12) {
+          computeStats();
+          statsDone = true;
+          window.__ready = true;
+        }
+      }
+      // kick off through rAF, not a direct call: the first frame's
+      // shader compiles must not run inside script evaluation, where
+      // they would hold back DOMContentLoaded on slow devices
+      requestAnimationFrame(animate);
+      // safety net: never leave the page unready because one model stalled
+      setTimeout(function () {
+        if (!window.__ready) window.__ready = true;   // flag only — stats stay "loading" rather than lying
+      }, 12000);
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+      else init();
+    })();
+    </script>
+    <script>
+    (function () {
+      'use strict';
+      /* Background music: "Last Christmas" — cover by J.Fla, a
+         sung female-vocal cover of the Wham! song in a warm pop
+         style. The recording is played exactly as published —
+         in full, unedited, on a plain repeat loop, with no edit
+         or crossfade at the seam.
+         Browsers forbid audible autoplay, so playback begins on the
+         visitor's first tap or drag anywhere on the page: it fades
+         in at a low ambience level, loops, pauses while the page is
+         in the background and resumes on return. No visible
+         controls — the page's zero-text rule stands.
+         Robustness: the file's bytes are fetched up front (a fetch
+         needs no gesture), and inside the first gesture BOTH paths
+         are armed synchronously — the AudioContext is created and
+         resumed, and a plain <audio> element is play()ed at volume
+         0. If the Web Audio decode then succeeds it takes over and
+         the element is paused; if it fails, the element — already
+         blessed by the gesture, so no autoplay policy can reject
+         it later — is simply faded up. Nothing latches shut: every
+         later tap retries whichever path is not yet live. */
+      var SRC = 'assets/last-christmas.mp3';
+      var TARGET_VOL = 0.3;    // quiet atmosphere bed, but plainly audible
+
+      var bufPromise = null;   // MP3 bytes, fetched before any gesture
+      var ctx = null, master = null, buf = null;
+      var decoding = false;
+      var webLive = false;     // Web Audio path is producing the loop
+      var fallbackEl = null;   // plain <audio>, armed inside the gesture
+      var fallbackRamp = null;
+      var gestureSeen = false;
+
+      function fetchBytes() {
+        if (!bufPromise) {
+          bufPromise = fetch(SRC).then(function (r) {
+            if (!r.ok) throw new Error('fetch failed');
+            return r.arrayBuffer();
+          });
+          // a failed prefetch must not poison the gesture-time retry
+          bufPromise.catch(function () { bufPromise = null; });
+        }
+        return bufPromise;
+      }
+      fetchBytes();
+
+      function startLoop() {
+        // one buffer source on the context's native repeat: the
+        // track plays start to finish, exactly as published, and
+        // begins again — no seam edit of any kind
+        var src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        src.connect(master);
+        src.start(ctx.currentTime + 0.05);
+      }
+      function startWebAudio() {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { fadeFallbackUp(); return; }
+        try {
+          if (!ctx) {
+            ctx = new AC();
+            master = ctx.createGain();
+            master.gain.value = 0;
+            master.connect(ctx.destination);
+          }
+          if (ctx.state !== 'running') ctx.resume();
+          if (webLive || buf || decoding) return;
+          decoding = true;
+          fetchBytes().then(function (ab) {
+            // decodeAudioData consumes the buffer it is given; hand
+            // it a copy so a later retry can decode the bytes again
+            return ctx.decodeAudioData(ab.slice(0));
+          }).then(function (decoded) {
+            decoding = false;
+            if (webLive) return;
+            buf = decoded;
+            webLive = true;
+            if (fallbackEl) fallbackEl.pause();   // Web Audio takes over
+            startLoop();
+            // fade in to ambience level
+            master.gain.setTargetAtTime(TARGET_VOL, ctx.currentTime, 1.1);
+          }).catch(function () {
+            decoding = false;
+            fadeFallbackUp();
+          });
+        } catch (e) {
+          fadeFallbackUp();
+        }
+      }
+      function armFallback() {
+        // Called synchronously inside the gesture: play() at volume 0
+        // blesses this element, so it can be faded up later even from
+        // an asynchronous failure handler, where a fresh play() call
+        // would be rejected by the autoplay policy.
+        if (!fallbackEl) {
+          fallbackEl = new Audio();
+          fallbackEl.src = SRC;
+          fallbackEl.loop = true;
+          fallbackEl.preload = 'auto';
+          fallbackEl.volume = 0;
+        }
+        if (fallbackEl.paused) {
+          var p = fallbackEl.play();
+          if (p && p.catch) p.catch(function () { /* next tap retries */ });
+        }
+      }
+      function fadeFallbackUp() {
+        if (!fallbackEl || webLive) return;
+        if (fallbackEl.paused) armFallback();
+        if (fallbackRamp) return;
+        var t0 = performance.now();
+        var v0 = fallbackEl.volume;
+        fallbackRamp = setInterval(function () {
+          var f = Math.min(1, (performance.now() - t0) / 3000);
+          fallbackEl.volume = v0 + (TARGET_VOL - v0) * f;
+          if (f >= 1) { clearInterval(fallbackRamp); fallbackRamp = null; }
+        }, 100);
+      }
+      function start() {
+        gestureSeen = true;
+        if (webLive) {
+          // later taps only revive a context the OS put to sleep
+          if (ctx && ctx.state !== 'running' && !document.hidden) ctx.resume();
+          return;
+        }
+        armFallback();      // synchronous, inside the gesture
+        startWebAudio();    // takes over if it can; fallback otherwise
+      }
+      window.addEventListener('pointerdown', start, false);
+      window.addEventListener('touchstart', start, false);
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+          if (ctx) ctx.suspend();
+          if (fallbackEl) fallbackEl.pause();
+        } else if (gestureSeen) {
+          if (webLive && ctx) ctx.resume();
+          else if (fallbackEl && fallbackEl.volume > 0) {
+            var p = fallbackEl.play();
+            if (p && p.catch) p.catch(function () {});
+          }
+        }
+      });
+    })();
+    </script>
+  </body>
+</html>
