@@ -2133,6 +2133,7 @@
       else init();
     })();
     </script>
+    <audio id="bgm" src="assets/last-christmas.mp3" preload="auto" loop playsinline webkit-playsinline style="display:none" aria-hidden="true"></audio>
     <script>
     (function () {
       'use strict';
@@ -2146,134 +2147,102 @@
          in at a low ambience level, loops, pauses while the page is
          in the background and resumes on return. No visible
          controls — the page's zero-text rule stands.
-         Robustness: the file's bytes are fetched up front (a fetch
-         needs no gesture), and inside the first gesture BOTH paths
-         are armed synchronously — the AudioContext is created and
-         resumed, and a plain <audio> element is play()ed at volume
-         0. If the Web Audio decode then succeeds it takes over and
-         the element is paused; if it fails, the element — already
-         blessed by the gesture, so no autoplay policy can reject
-         it later — is simply faded up. Nothing latches shut: every
-         later tap retries whichever path is not yet live. */
-      var SRC = 'assets/last-christmas.mp3';
+
+         WeChat-proof arming (the old fetch/decode-first design
+         failed intermittently in WeChat's WKWebView: its transient
+         activation window is so short that a play() issued after
+         any fetch/await lands outside it and is rejected, and the
+         rejection then latched, so later taps never retried):
+         - The <audio> element is in the markup with preload="auto",
+           so the file starts loading the moment the page opens
+           (loading is not playback and needs no gesture).
+         - play() is called SYNCHRONOUSLY as the very first
+           statement of the pointerdown/touchstart handler — no
+           fetch, no await, nothing before it. If the file has not
+           finished loading, load()+play() are issued synchronously
+           and the element streams while it downloads.
+         - WeChat bridge channel: WeixinJSBridgeReady triggers a
+           play() attempt, and the first tap also fires
+           WeixinJSBridge.invoke('getNetworkType'), whose callback
+           retries play() once more.
+         - Nothing ever latches shut: the ONLY "sound is playing"
+           signal is the element's own 'playing' event. Until that
+           fires, EVERY tap calls play() again synchronously; a
+           rejected play() promise is merely swallowed, never
+           recorded as an armed or failed state. */
       var TARGET_VOL = 0.3;    // quiet atmosphere bed, but plainly audible
 
-      var bufPromise = null;   // MP3 bytes, fetched before any gesture
-      var ctx = null, master = null, buf = null;
-      var decoding = false;
-      var webLive = false;     // Web Audio path is producing the loop
-      var fallbackEl = null;   // plain <audio>, armed inside the gesture
-      var fallbackRamp = null;
-      var gestureSeen = false;
+      var el = document.getElementById('bgm');
+      var hasSound = false;    // set ONLY by the 'playing' event; cleared by 'pause'
+      var everPlayed = false;  // reached 'playing' at least once (foreground resume)
+      var ramp = null;
+      var bridgeNudged = false;
 
-      function fetchBytes() {
-        if (!bufPromise) {
-          bufPromise = fetch(SRC).then(function (r) {
-            if (!r.ok) throw new Error('fetch failed');
-            return r.arrayBuffer();
-          });
-          // a failed prefetch must not poison the gesture-time retry
-          bufPromise.catch(function () { bufPromise = null; });
-        }
-        return bufPromise;
-      }
-      fetchBytes();
+      el.volume = 0;
+      try { el.load(); } catch (e) {}   // preload="auto" already started this; explicit kick
 
-      function startLoop() {
-        // one buffer source on the context's native repeat: the
-        // track plays start to finish, exactly as published, and
-        // begins again — no seam edit of any kind
-        var src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.loop = true;
-        src.connect(master);
-        src.start(ctx.currentTime + 0.05);
-      }
-      function startWebAudio() {
-        var AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) { fadeFallbackUp(); return; }
-        try {
-          if (!ctx) {
-            ctx = new AC();
-            master = ctx.createGain();
-            master.gain.value = 0;
-            master.connect(ctx.destination);
-          }
-          if (ctx.state !== 'running') ctx.resume();
-          if (webLive || buf || decoding) return;
-          decoding = true;
-          fetchBytes().then(function (ab) {
-            // decodeAudioData consumes the buffer it is given; hand
-            // it a copy so a later retry can decode the bytes again
-            return ctx.decodeAudioData(ab.slice(0));
-          }).then(function (decoded) {
-            decoding = false;
-            if (webLive) return;
-            buf = decoded;
-            webLive = true;
-            if (fallbackEl) fallbackEl.pause();   // Web Audio takes over
-            startLoop();
-            // fade in to ambience level
-            master.gain.setTargetAtTime(TARGET_VOL, ctx.currentTime, 1.1);
-          }).catch(function () {
-            decoding = false;
-            fadeFallbackUp();
-          });
-        } catch (e) {
-          fadeFallbackUp();
-        }
-      }
-      function armFallback() {
-        // Called synchronously inside the gesture: play() at volume 0
-        // blesses this element, so it can be faded up later even from
-        // an asynchronous failure handler, where a fresh play() call
-        // would be rejected by the autoplay policy.
-        if (!fallbackEl) {
-          fallbackEl = new Audio();
-          fallbackEl.src = SRC;
-          fallbackEl.loop = true;
-          fallbackEl.preload = 'auto';
-          fallbackEl.volume = 0;
-        }
-        if (fallbackEl.paused) {
-          var p = fallbackEl.play();
-          if (p && p.catch) p.catch(function () { /* next tap retries */ });
-        }
-      }
-      function fadeFallbackUp() {
-        if (!fallbackEl || webLive) return;
-        if (fallbackEl.paused) armFallback();
-        if (fallbackRamp) return;
+      function fadeUp() {
+        if (ramp) return;
         var t0 = performance.now();
-        var v0 = fallbackEl.volume;
-        fallbackRamp = setInterval(function () {
+        var v0 = el.volume;
+        ramp = setInterval(function () {
           var f = Math.min(1, (performance.now() - t0) / 3000);
-          fallbackEl.volume = v0 + (TARGET_VOL - v0) * f;
-          if (f >= 1) { clearInterval(fallbackRamp); fallbackRamp = null; }
+          el.volume = v0 + (TARGET_VOL - v0) * f;
+          if (f >= 1) { clearInterval(ramp); ramp = null; }
         }, 100);
       }
-      function start() {
-        gestureSeen = true;
-        if (webLive) {
-          // later taps only revive a context the OS put to sleep
-          if (ctx && ctx.state !== 'running' && !document.hidden) ctx.resume();
-          return;
-        }
-        armFallback();      // synchronous, inside the gesture
-        startWebAudio();    // takes over if it can; fallback otherwise
+
+      // The one and only play entry point. It performs no
+      // asynchronous work before play(), so it can be called
+      // synchronously inside a user-gesture handler (or the WeChat
+      // bridge callback) and still land inside the activation
+      // window. A rejection is swallowed without latching anything.
+      function tryPlay() {
+        if (!el.paused && hasSound) return;
+        if (el.readyState === 0) { try { el.load(); } catch (e) {} }
+        var p;
+        try { p = el.play(); } catch (e) { return; }
+        if (p && p.catch) p.catch(function () { /* noted only — the next tap retries */ });
       }
-      window.addEventListener('pointerdown', start, false);
-      window.addEventListener('touchstart', start, false);
+
+      el.addEventListener('playing', function () {
+        hasSound = true;       // the sole proof that sound is actually coming out
+        everPlayed = true;
+        fadeUp();
+      });
+      el.addEventListener('pause', function () {
+        hasSound = false;      // any pause re-arms the tap-to-retry path
+      });
+
+      function onGesture() {
+        tryPlay();   // FIRST, synchronously — nothing may precede this call
+        if (!bridgeNudged) {
+          bridgeNudged = true;
+          if (window.WeixinJSBridge && window.WeixinJSBridge.invoke) {
+            try {
+              window.WeixinJSBridge.invoke('getNetworkType', {}, function () { tryPlay(); });
+            } catch (e) {}
+          }
+        }
+      }
+      window.addEventListener('pointerdown', onGesture, false);
+      window.addEventListener('touchstart', onGesture, false);
+
+      // WeChat bridge channel: fires inside WeChat once its JS
+      // bridge is ready — a second, gesture-independent chance
+      // to start playback.
+      function onBridgeReady() { tryPlay(); }
+      if (typeof window.WeixinJSBridge === 'undefined') {
+        document.addEventListener('WeixinJSBridgeReady', onBridgeReady, false);
+      } else {
+        onBridgeReady();
+      }
+
       document.addEventListener('visibilitychange', function () {
         if (document.hidden) {
-          if (ctx) ctx.suspend();
-          if (fallbackEl) fallbackEl.pause();
-        } else if (gestureSeen) {
-          if (webLive && ctx) ctx.resume();
-          else if (fallbackEl && fallbackEl.volume > 0) {
-            var p = fallbackEl.play();
-            if (p && p.catch) p.catch(function () {});
-          }
+          el.pause();
+        } else if (everPlayed) {
+          tryPlay();   // element was blessed by the first gesture; resume the loop
         }
       });
     })();
